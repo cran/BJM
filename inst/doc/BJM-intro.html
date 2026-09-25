@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+
+
+<title>Getting Started with BJM</title>
+
+<script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
+// be compatible with the behavior of Pandoc < 2.8).
+document.addEventListener('DOMContentLoaded', function(e) {
+  var hs = document.querySelectorAll("div.section[class*='level'] > :first-child");
+  var i, h, a;
+  for (i = 0; i < hs.length; i++) {
+    h = hs[i];
+    if (!/^h[1-6]$/i.test(h.tagName)) continue;  // it should be a header h1-h6
+    a = h.attributes;
+    while (a.length > 0) h.removeAttribute(a[0].name);
+  }
+});
+</script>
+
+<style type="text/css">
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+span.underline{text-decoration: underline;}
+div.column{display: inline-block; vertical-align: top; width: 50%;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+</style>
+
+
+
+<style type="text/css">
+code {
+white-space: pre;
+}
+.sourceCode {
+overflow: visible;
+}
+</style>
+<style type="text/css" data-origin="pandoc">
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+{ counter-reset: source-line 0; }
+pre.numberSource code > span
+{ position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+{ content: counter(source-line);
+position: relative; left: -1em; text-align: right; vertical-align: baseline;
+border: none; display: inline-block;
+-webkit-touch-callout: none; -webkit-user-select: none;
+-khtml-user-select: none; -moz-user-select: none;
+-ms-user-select: none; user-select: none;
+padding: 0 4px; width: 4em;
+color: #aaaaaa;
+}
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa; padding-left: 4px; }
+div.sourceCode
+{ }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } 
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.at { color: #7d9029; } 
+code span.bn { color: #40a070; } 
+code span.bu { color: #008000; } 
+code span.cf { color: #007020; font-weight: bold; } 
+code span.ch { color: #4070a0; } 
+code span.cn { color: #880000; } 
+code span.co { color: #60a0b0; font-style: italic; } 
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.do { color: #ba2121; font-style: italic; } 
+code span.dt { color: #902000; } 
+code span.dv { color: #40a070; } 
+code span.er { color: #ff0000; font-weight: bold; } 
+code span.ex { } 
+code span.fl { color: #40a070; } 
+code span.fu { color: #06287e; } 
+code span.im { color: #008000; font-weight: bold; } 
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.kw { color: #007020; font-weight: bold; } 
+code span.op { color: #666666; } 
+code span.ot { color: #007020; } 
+code span.pp { color: #bc7a00; } 
+code span.sc { color: #4070a0; } 
+code span.ss { color: #bb6688; } 
+code span.st { color: #4070a0; } 
+code span.va { color: #19177c; } 
+code span.vs { color: #4070a0; } 
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } 
+</style>
+<script>
+// apply pandoc div.sourceCode style to pre.sourceCode instead
+(function() {
+  var sheets = document.styleSheets;
+  for (var i = 0; i < sheets.length; i++) {
+    if (sheets[i].ownerNode.dataset["origin"] !== "pandoc") continue;
+    try { var rules = sheets[i].cssRules; } catch (e) { continue; }
+    var j = 0;
+    while (j < rules.length) {
+      var rule = rules[j];
+      // check if there is a div.sourceCode rule
+      if (rule.type !== rule.STYLE_RULE || rule.selectorText !== "div.sourceCode") {
+        j++;
+        continue;
+      }
+      var style = rule.style.cssText;
+      // check if color or background-color is set
+      if (rule.style.color === '' && rule.style.backgroundColor === '') {
+        j++;
+        continue;
+      }
+      // replace div.sourceCode by a pre.sourceCode rule
+      sheets[i].deleteRule(j);
+      sheets[i].insertRule('pre.sourceCode{' + style + '}', j);
+    }
+  }
+})();
+</script>
+
+
+
+
+<style type="text/css">body {
+background-color: #fff;
+margin: 1em auto;
+max-width: 700px;
+overflow: visible;
+padding-left: 2em;
+padding-right: 2em;
+font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+font-size: 14px;
+line-height: 1.35;
+}
+#TOC {
+clear: both;
+margin: 0 0 10px 10px;
+padding: 4px;
+width: 400px;
+border: 1px solid #CCCCCC;
+border-radius: 5px;
+background-color: #f6f6f6;
+font-size: 13px;
+line-height: 1.3;
+}
+#TOC .toctitle {
+font-weight: bold;
+font-size: 15px;
+margin-left: 5px;
+}
+#TOC ul {
+padding-left: 40px;
+margin-left: -1.5em;
+margin-top: 5px;
+margin-bottom: 5px;
+}
+#TOC ul ul {
+margin-left: -2em;
+}
+#TOC li {
+line-height: 16px;
+}
+table {
+margin: 1em auto;
+border-width: 1px;
+border-color: #DDDDDD;
+border-style: outset;
+border-collapse: collapse;
+}
+table th {
+border-width: 2px;
+padding: 5px;
+border-style: inset;
+}
+table td {
+border-width: 1px;
+border-style: inset;
+line-height: 18px;
+padding: 5px 5px;
+}
+table, table th, table td {
+border-left-style: none;
+border-right-style: none;
+}
+table thead, table tr.even {
+background-color: #f7f7f7;
+}
+p {
+margin: 0.5em 0;
+}
+blockquote {
+background-color: #f6f6f6;
+padding: 0.25em 0.75em;
+}
+hr {
+border-style: solid;
+border: none;
+border-top: 1px solid #777;
+margin: 28px 0;
+}
+dl {
+margin-left: 0;
+}
+dl dd {
+margin-bottom: 13px;
+margin-left: 13px;
+}
+dl dt {
+font-weight: bold;
+}
+ul {
+margin-top: 0;
+}
+ul li {
+list-style: circle outside;
+}
+ul ul {
+margin-bottom: 0;
+}
+pre, code {
+background-color: #f7f7f7;
+border-radius: 3px;
+color: #333;
+white-space: pre-wrap; 
+}
+pre {
+border-radius: 3px;
+margin: 5px 0px 10px 0px;
+padding: 10px;
+}
+pre:not([class]) {
+background-color: #f7f7f7;
+}
+code {
+font-family: Consolas, Monaco, 'Courier New', monospace;
+font-size: 85%;
+}
+p > code, li > code {
+padding: 2px 0px;
+}
+div.figure {
+text-align: center;
+}
+img {
+background-color: #FFFFFF;
+padding: 2px;
+border: 1px solid #DDDDDD;
+border-radius: 3px;
+border: 1px solid #CCCCCC;
+margin: 0 5px;
+}
+h1 {
+margin-top: 0;
+font-size: 35px;
+line-height: 40px;
+}
+h2 {
+border-bottom: 4px solid #f7f7f7;
+padding-top: 10px;
+padding-bottom: 2px;
+font-size: 145%;
+}
+h3 {
+border-bottom: 2px solid #f7f7f7;
+padding-top: 10px;
+font-size: 120%;
+}
+h4 {
+border-bottom: 1px solid #f7f7f7;
+margin-left: 8px;
+font-size: 105%;
+}
+h5, h6 {
+border-bottom: 1px solid #ccc;
+font-size: 105%;
+}
+a {
+color: #0033dd;
+text-decoration: none;
+}
+a:hover {
+color: #6666ff; }
+a:visited {
+color: #800080; }
+a:visited:hover {
+color: #BB00BB; }
+a[href^="http:"] {
+text-decoration: underline; }
+a[href^="https:"] {
+text-decoration: underline; }
+
+code > span.kw { color: #555; font-weight: bold; } 
+code > span.dt { color: #902000; } 
+code > span.dv { color: #40a070; } 
+code > span.bn { color: #d14; } 
+code > span.fl { color: #d14; } 
+code > span.ch { color: #d14; } 
+code > span.st { color: #d14; } 
+code > span.co { color: #888888; font-style: italic; } 
+code > span.ot { color: #007020; } 
+code > span.al { color: #ff0000; font-weight: bold; } 
+code > span.fu { color: #900; font-weight: bold; } 
+code > span.er { color: #a61717; background-color: #e3d2d2; } 
+</style>
+
+
+
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">Getting Started with BJM</h1>
+
+
+
+<div id="overview" class="section level2">
+<h2>Overview</h2>
+<p>BJM fits a <em>backward joint model</em> of multivariate longitudinal
+outcomes and time-to-event data, and uses it to make <strong>dynamic
+predictions</strong>: given a patient’s longitudinal history up to some
+<code>prediction_time</code>, predict their risk of an event (and, if
+desired, their future biomarker values) conditional on survival to that
+point.</p>
+<p>Fitting and prediction is a four-step pipeline:</p>
+<ol style="list-style-type: decimal">
+<li><code>survivalSub()</code> fits the marginal survival sub-model
+(and, optionally, a competing-risks sub-model).</li>
+<li><code>longitudinalSub()</code> fits the longitudinal sub-model(s),
+one per biomarker.</li>
+<li><code>dynamicPrediction()</code> combines the two fits to predict a
+patient’s event risk over a future horizon.</li>
+<li><code>dynamicPredictionBio()</code> additionally predicts a future
+value of one specific biomarker.</li>
+</ol>
+<p>This vignette walks through all four steps on the <code>pbc3</code>
+data set that ships with the package, then covers two practical
+questions that come up once the mechanics are working: how to choose the
+<code>bandcount1</code>/ <code>bandcount2</code>/<code>bandcount3</code>
+numerical-integration tuning parameters, and what happens when the
+pipeline functions are called with malformed inputs.</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a><span class="fu">library</span>(BJM)</span>
+<span id="cb1-2"><a href="#cb1-2" tabindex="-1"></a><span class="co">#&gt; Loading required package: survival</span></span>
+<span id="cb1-3"><a href="#cb1-3" tabindex="-1"></a><span class="fu">data</span>(pbc3)</span></code></pre></div>
+<p><code>pbc3</code> is in long format: one row per longitudinal
+measurement, with baseline covariates (<code>age</code>,
+<code>sex</code>, …) repeated on every row for a given patient, and
+event-time variables (<code>years</code>, <code>status3</code>, …) that
+are also constant within patient.</p>
+</div>
+<div id="step-1-fit-the-survival-sub-model-with-survivalsub" class="section level2">
+<h2>Step 1: Fit the survival sub-model with
+<code>survivalSub()</code></h2>
+<p><code>survivalSub()</code> needs one row per patient, so we first
+drop the repeated longitudinal rows. <code>form_marginal_surv</code> is
+a standard <code>survival::Surv()</code> formula for the overall event.
+<code>form_conditional_cr</code> is optional: supply it when there is
+more than one competing event type and you want to predict
+event-specific risk (here, <code>status4</code> distinguishes the two
+causes among patients who had <em>some</em> event).</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a>data_survival_fitting <span class="ot">&lt;-</span> pbc3[<span class="sc">!</span><span class="fu">duplicated</span>(pbc3<span class="sc">$</span>id), ]</span>
+<span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a></span>
+<span id="cb2-3"><a href="#cb2-3" tabindex="-1"></a>survival_fit_all <span class="ot">&lt;-</span> <span class="fu">survivalSub</span>(</span>
+<span id="cb2-4"><a href="#cb2-4" tabindex="-1"></a>  data_survival_fitting,</span>
+<span id="cb2-5"><a href="#cb2-5" tabindex="-1"></a>  <span class="at">form_marginal_surv =</span> <span class="fu">Surv</span>(years, status3) <span class="sc">~</span> age <span class="sc">+</span> sex,</span>
+<span id="cb2-6"><a href="#cb2-6" tabindex="-1"></a>  <span class="at">form_conditional_cr =</span> status4 <span class="sc">~</span> years <span class="sc">+</span> age <span class="sc">+</span> sex</span>
+<span id="cb2-7"><a href="#cb2-7" tabindex="-1"></a>)</span>
+<span id="cb2-8"><a href="#cb2-8" tabindex="-1"></a></span>
+<span id="cb2-9"><a href="#cb2-9" tabindex="-1"></a>survival_fit_all</span>
+<span id="cb2-10"><a href="#cb2-10" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb2-11"><a href="#cb2-11" tabindex="-1"></a><span class="co">#&gt; Call:</span></span>
+<span id="cb2-12"><a href="#cb2-12" tabindex="-1"></a><span class="co">#&gt; survivalSub(form_marginal_surv = Surv(years, status3) ~ age + sex,</span></span>
+<span id="cb2-13"><a href="#cb2-13" tabindex="-1"></a><span class="co">#&gt;             form_conditional_cr = status4 ~ years + age + sex)</span></span>
+<span id="cb2-14"><a href="#cb2-14" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb2-15"><a href="#cb2-15" tabindex="-1"></a><span class="co">#&gt; Data Descriptives:</span></span>
+<span id="cb2-16"><a href="#cb2-16" tabindex="-1"></a><span class="co">#&gt;   Number of subjects        : 312</span></span>
+<span id="cb2-17"><a href="#cb2-17" tabindex="-1"></a><span class="co">#&gt;   Number of events          : 169</span></span>
+<span id="cb2-18"><a href="#cb2-18" tabindex="-1"></a><span class="co">#&gt;   Cause-1 events (CR model) : 29</span></span>
+<span id="cb2-19"><a href="#cb2-19" tabindex="-1"></a><span class="co">#&gt;   Cause-2 events (CR model) : 140</span></span>
+<span id="cb2-20"><a href="#cb2-20" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb2-21"><a href="#cb2-21" tabindex="-1"></a><span class="co">#&gt; =================================================================</span></span>
+<span id="cb2-22"><a href="#cb2-22" tabindex="-1"></a><span class="co">#&gt;  Marginal Survival Sub-model  [Cox PH]</span></span>
+<span id="cb2-23"><a href="#cb2-23" tabindex="-1"></a><span class="co">#&gt; -----------------------------------------------------------------</span></span>
+<span id="cb2-24"><a href="#cb2-24" tabindex="-1"></a><span class="co">#&gt;  Formula: Surv(years, status3) ~ age + sex</span></span>
+<span id="cb2-25"><a href="#cb2-25" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb2-26"><a href="#cb2-26" tabindex="-1"></a><span class="co">#&gt;          Coef exp(Coef)        SE      z p-value   </span></span>
+<span id="cb2-27"><a href="#cb2-27" tabindex="-1"></a><span class="co">#&gt; age  0.020411  1.020621  0.007584  2.691 0.00712 **</span></span>
+<span id="cb2-28"><a href="#cb2-28" tabindex="-1"></a><span class="co">#&gt; sex -0.497707  0.607923  0.207078 -2.403 0.01624 * </span></span>
+<span id="cb2-29"><a href="#cb2-29" tabindex="-1"></a><span class="co">#&gt; ---</span></span>
+<span id="cb2-30"><a href="#cb2-30" tabindex="-1"></a><span class="co">#&gt; Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1</span></span>
+<span id="cb2-31"><a href="#cb2-31" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb2-32"><a href="#cb2-32" tabindex="-1"></a><span class="co">#&gt;   n = 312,  events = 169</span></span>
+<span id="cb2-33"><a href="#cb2-33" tabindex="-1"></a><span class="co">#&gt;   Concordance       = 0.570  (se = 0.0226)</span></span>
+<span id="cb2-34"><a href="#cb2-34" tabindex="-1"></a><span class="co">#&gt;   Likelihood ratio  = 14.20  on 2 df,  p = 0.0008263</span></span>
+<span id="cb2-35"><a href="#cb2-35" tabindex="-1"></a><span class="co">#&gt;   Wald test         = 15.29  on 2 df,  p = 0.0004776</span></span>
+<span id="cb2-36"><a href="#cb2-36" tabindex="-1"></a><span class="co">#&gt;   Score (logrank)   = 15.50  on 2 df,  p = 0.0004299</span></span>
+<span id="cb2-37"><a href="#cb2-37" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb2-38"><a href="#cb2-38" tabindex="-1"></a><span class="co">#&gt; =================================================================</span></span>
+<span id="cb2-39"><a href="#cb2-39" tabindex="-1"></a><span class="co">#&gt;  Conditional Competing-Risks Sub-model  [Logistic GLM]</span></span>
+<span id="cb2-40"><a href="#cb2-40" tabindex="-1"></a><span class="co">#&gt; -----------------------------------------------------------------</span></span>
+<span id="cb2-41"><a href="#cb2-41" tabindex="-1"></a><span class="co">#&gt;  Formula: status4 ~ years + age + sex</span></span>
+<span id="cb2-42"><a href="#cb2-42" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb2-43"><a href="#cb2-43" tabindex="-1"></a><span class="co">#&gt;                 Coef       SE      z  p-value    </span></span>
+<span id="cb2-44"><a href="#cb2-44" tabindex="-1"></a><span class="co">#&gt; (Intercept)  5.65622  1.70478  3.318 0.000907 ***</span></span>
+<span id="cb2-45"><a href="#cb2-45" tabindex="-1"></a><span class="co">#&gt; years       -0.02898  0.08919 -0.325 0.745242    </span></span>
+<span id="cb2-46"><a href="#cb2-46" tabindex="-1"></a><span class="co">#&gt; age         -0.15305  0.03076 -4.976  6.5e-07 ***</span></span>
+<span id="cb2-47"><a href="#cb2-47" tabindex="-1"></a><span class="co">#&gt; sex          0.02109  0.77150  0.027 0.978192    </span></span>
+<span id="cb2-48"><a href="#cb2-48" tabindex="-1"></a><span class="co">#&gt; ---</span></span>
+<span id="cb2-49"><a href="#cb2-49" tabindex="-1"></a><span class="co">#&gt; Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1</span></span>
+<span id="cb2-50"><a href="#cb2-50" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb2-51"><a href="#cb2-51" tabindex="-1"></a><span class="co">#&gt;   Null deviance     : 154.94  on 168 df</span></span>
+<span id="cb2-52"><a href="#cb2-52" tabindex="-1"></a><span class="co">#&gt;   Residual deviance : 115.05  on 165 df</span></span>
+<span id="cb2-53"><a href="#cb2-53" tabindex="-1"></a><span class="co">#&gt;   AIC : 123.05</span></span>
+<span id="cb2-54"><a href="#cb2-54" tabindex="-1"></a><span class="co">#&gt; =================================================================</span></span></code></pre></div>
+</div>
+<div id="step-2-fit-the-longitudinal-sub-models-with-longitudinalsub" class="section level2">
+<h2>Step 2: Fit the longitudinal sub-models with
+<code>longitudinalSub()</code></h2>
+<p>Each biomarker gets its own fixed-effects formula and random-effects
+formula, supplied as same-length, same-order lists.
+<code>data_fit_all</code> is a matching list of fitting data sets (one
+per biomarker) — or a single <code>data.frame</code> that is reused for
+every biomarker, if all biomarkers are fit on the same data. Here we fit
+two biomarkers, <code>serBilir</code> and <code>albumin</code>, on the
+complete-case subset.</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a>long_sub_fixed <span class="ot">&lt;-</span> <span class="fu">list</span>(</span>
+<span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a>  <span class="st">&quot;serBilir&quot;</span> <span class="ot">=</span> serBilir <span class="sc">~</span> year <span class="sc">+</span> age <span class="sc">+</span> sex <span class="sc">+</span> (years) <span class="sc">+</span> (years) <span class="sc">*</span> year,</span>
+<span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a>  <span class="st">&quot;albumin&quot;</span>  <span class="ot">=</span> albumin  <span class="sc">~</span> year <span class="sc">+</span> age <span class="sc">+</span> sex <span class="sc">+</span> (years) <span class="sc">+</span> (years) <span class="sc">*</span> year</span>
+<span id="cb3-4"><a href="#cb3-4" tabindex="-1"></a>)</span>
+<span id="cb3-5"><a href="#cb3-5" tabindex="-1"></a>long_sub_random <span class="ot">&lt;-</span> <span class="fu">list</span>(</span>
+<span id="cb3-6"><a href="#cb3-6" tabindex="-1"></a>  <span class="st">&quot;serBilir&quot;</span> <span class="ot">=</span> <span class="er">~</span> year <span class="sc">|</span> id,</span>
+<span id="cb3-7"><a href="#cb3-7" tabindex="-1"></a>  <span class="st">&quot;albumin&quot;</span>  <span class="ot">=</span> <span class="er">~</span> year <span class="sc">|</span> id</span>
+<span id="cb3-8"><a href="#cb3-8" tabindex="-1"></a>)</span>
+<span id="cb3-9"><a href="#cb3-9" tabindex="-1"></a></span>
+<span id="cb3-10"><a href="#cb3-10" tabindex="-1"></a>data_fit_all <span class="ot">&lt;-</span> <span class="fu">list</span>(pbc3[pbc3<span class="sc">$</span>status3 <span class="sc">==</span> <span class="dv">1</span>, ], pbc3[pbc3<span class="sc">$</span>status3 <span class="sc">==</span> <span class="dv">1</span>, ])</span>
+<span id="cb3-11"><a href="#cb3-11" tabindex="-1"></a></span>
+<span id="cb3-12"><a href="#cb3-12" tabindex="-1"></a>long_fit_all <span class="ot">&lt;-</span> <span class="fu">longitudinalSub</span>(data_fit_all, long_sub_fixed, long_sub_random)</span>
+<span id="cb3-13"><a href="#cb3-13" tabindex="-1"></a></span>
+<span id="cb3-14"><a href="#cb3-14" tabindex="-1"></a>long_fit_all</span>
+<span id="cb3-15"><a href="#cb3-15" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb3-16"><a href="#cb3-16" tabindex="-1"></a><span class="co">#&gt; Call:</span></span>
+<span id="cb3-17"><a href="#cb3-17" tabindex="-1"></a><span class="co">#&gt; longitudinalSub(M = 2 longitudinal outcomes)</span></span>
+<span id="cb3-18"><a href="#cb3-18" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb3-19"><a href="#cb3-19" tabindex="-1"></a><span class="co">#&gt; =================================================================</span></span>
+<span id="cb3-20"><a href="#cb3-20" tabindex="-1"></a><span class="co">#&gt;  Longitudinal Sub-model(s)</span></span>
+<span id="cb3-21"><a href="#cb3-21" tabindex="-1"></a><span class="co">#&gt; -----------------------------------------------------------------</span></span>
+<span id="cb3-22"><a href="#cb3-22" tabindex="-1"></a><span class="co">#&gt;  [1] serBilir</span></span>
+<span id="cb3-23"><a href="#cb3-23" tabindex="-1"></a><span class="co">#&gt;  Formula: serBilir ~ year + age + sex + (years) + (years) * year</span></span>
+<span id="cb3-24"><a href="#cb3-24" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb3-25"><a href="#cb3-25" tabindex="-1"></a><span class="co">#&gt;                 Value        SE      t  p-value    </span></span>
+<span id="cb3-26"><a href="#cb3-26" tabindex="-1"></a><span class="co">#&gt; (Intercept)  2.424554  0.384604  6.304 5.13e-10 ***</span></span>
+<span id="cb3-27"><a href="#cb3-27" tabindex="-1"></a><span class="co">#&gt; year         0.442242  0.042957 10.295  &lt; 2e-16 ***</span></span>
+<span id="cb3-28"><a href="#cb3-28" tabindex="-1"></a><span class="co">#&gt; age         -0.011675  0.005785 -2.018   0.0439 *  </span></span>
+<span id="cb3-29"><a href="#cb3-29" tabindex="-1"></a><span class="co">#&gt; sex          0.078449  0.167140  0.469   0.6390    </span></span>
+<span id="cb3-30"><a href="#cb3-30" tabindex="-1"></a><span class="co">#&gt; years       -0.204130  0.021557 -9.469  &lt; 2e-16 ***</span></span>
+<span id="cb3-31"><a href="#cb3-31" tabindex="-1"></a><span class="co">#&gt; year:years  -0.027852  0.006112 -4.557 6.12e-06 ***</span></span>
+<span id="cb3-32"><a href="#cb3-32" tabindex="-1"></a><span class="co">#&gt; ---</span></span>
+<span id="cb3-33"><a href="#cb3-33" tabindex="-1"></a><span class="co">#&gt; Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1</span></span>
+<span id="cb3-34"><a href="#cb3-34" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb3-35"><a href="#cb3-35" tabindex="-1"></a><span class="co">#&gt;   Residual std. error (sigma): 0.4186</span></span>
+<span id="cb3-36"><a href="#cb3-36" tabindex="-1"></a><span class="co">#&gt;   n (subjects) = 169,  N (observations) = 872</span></span>
+<span id="cb3-37"><a href="#cb3-37" tabindex="-1"></a><span class="co">#&gt;   Log-likelihood: -772.87</span></span>
+<span id="cb3-38"><a href="#cb3-38" tabindex="-1"></a><span class="co">#&gt;   AIC: 1565.74,  BIC: 1613.45</span></span>
+<span id="cb3-39"><a href="#cb3-39" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb3-40"><a href="#cb3-40" tabindex="-1"></a><span class="co">#&gt; -----------------------------------------------------------------</span></span>
+<span id="cb3-41"><a href="#cb3-41" tabindex="-1"></a><span class="co">#&gt;  [2] albumin</span></span>
+<span id="cb3-42"><a href="#cb3-42" tabindex="-1"></a><span class="co">#&gt;  Formula: albumin ~ year + age + sex + (years) + (years) * year</span></span>
+<span id="cb3-43"><a href="#cb3-43" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb3-44"><a href="#cb3-44" tabindex="-1"></a><span class="co">#&gt;                 Value        SE      t  p-value    </span></span>
+<span id="cb3-45"><a href="#cb3-45" tabindex="-1"></a><span class="co">#&gt; (Intercept)  3.578828  0.150261 23.817  &lt; 2e-16 ***</span></span>
+<span id="cb3-46"><a href="#cb3-46" tabindex="-1"></a><span class="co">#&gt; year        -0.219541  0.026452 -8.300 5.36e-16 ***</span></span>
+<span id="cb3-47"><a href="#cb3-47" tabindex="-1"></a><span class="co">#&gt; age         -0.006625  0.002261 -2.930  0.00350 ** </span></span>
+<span id="cb3-48"><a href="#cb3-48" tabindex="-1"></a><span class="co">#&gt; sex         -0.170236  0.064981 -2.620  0.00899 ** </span></span>
+<span id="cb3-49"><a href="#cb3-49" tabindex="-1"></a><span class="co">#&gt; years        0.077939  0.008732  8.926  &lt; 2e-16 ***</span></span>
+<span id="cb3-50"><a href="#cb3-50" tabindex="-1"></a><span class="co">#&gt; year:years   0.010955  0.003585  3.056  0.00233 ** </span></span>
+<span id="cb3-51"><a href="#cb3-51" tabindex="-1"></a><span class="co">#&gt; ---</span></span>
+<span id="cb3-52"><a href="#cb3-52" tabindex="-1"></a><span class="co">#&gt; Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1</span></span>
+<span id="cb3-53"><a href="#cb3-53" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb3-54"><a href="#cb3-54" tabindex="-1"></a><span class="co">#&gt;   Residual std. error (sigma): 0.3121</span></span>
+<span id="cb3-55"><a href="#cb3-55" tabindex="-1"></a><span class="co">#&gt;   n (subjects) = 169,  N (observations) = 872</span></span>
+<span id="cb3-56"><a href="#cb3-56" tabindex="-1"></a><span class="co">#&gt;   Log-likelihood: -386.29</span></span>
+<span id="cb3-57"><a href="#cb3-57" tabindex="-1"></a><span class="co">#&gt;   AIC: 792.58,  BIC: 840.29</span></span>
+<span id="cb3-58"><a href="#cb3-58" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb3-59"><a href="#cb3-59" tabindex="-1"></a><span class="co">#&gt; =================================================================</span></span>
+<span id="cb3-60"><a href="#cb3-60" tabindex="-1"></a><span class="co">#&gt;  Multivariate Random-Effects Covariance Matrix (D)</span></span>
+<span id="cb3-61"><a href="#cb3-61" tabindex="-1"></a><span class="co">#&gt; -----------------------------------------------------------------</span></span>
+<span id="cb3-62"><a href="#cb3-62" tabindex="-1"></a><span class="co">#&gt;               (Intercept)_1  year_1 (Intercept)_2  year_2</span></span>
+<span id="cb3-63"><a href="#cb3-63" tabindex="-1"></a><span class="co">#&gt; (Intercept)_1        0.6012 -0.0231       -0.0473 -0.0070</span></span>
+<span id="cb3-64"><a href="#cb3-64" tabindex="-1"></a><span class="co">#&gt; year_1              -0.0231  0.0193        0.0121 -0.0050</span></span>
+<span id="cb3-65"><a href="#cb3-65" tabindex="-1"></a><span class="co">#&gt; (Intercept)_2       -0.0473  0.0121        0.0722 -0.0045</span></span>
+<span id="cb3-66"><a href="#cb3-66" tabindex="-1"></a><span class="co">#&gt; year_2              -0.0070 -0.0050       -0.0045  0.0050</span></span>
+<span id="cb3-67"><a href="#cb3-67" tabindex="-1"></a><span class="co">#&gt; =================================================================</span></span></code></pre></div>
+</div>
+<div id="step-3-predict-event-risk-with-dynamicprediction" class="section level2">
+<h2>Step 3: Predict event risk with
+<code>dynamicPrediction()</code></h2>
+<p>To predict for a specific patient, build a
+<code>data_predict_all</code> list (one <code>data.frame</code> per
+biomarker, mirroring <code>data_fit_all</code>) containing only that
+patient’s measurements <em>up to</em> <code>prediction_time</code> —
+later measurements would not be available yet in a real prediction
+setting. Below we predict, for patient 2, the risk of each event type
+within one year of <code>year = 5</code>.</p>
+<p><code>survival_variable_all</code>/<code>survival_trans_function</code>
+describe how the raw event-time variable is transformed for the
+integration grid; see <code>?dynamicPrediction</code> for details.</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a>survival_variable_all <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="st">&quot;Tyears1&quot;</span>, <span class="st">&quot;Tyears2&quot;</span>, <span class="st">&quot;Tyears3&quot;</span>, <span class="st">&quot;Tyears4&quot;</span>)</span>
+<span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a>survival_trans_function <span class="ot">&lt;-</span> <span class="fu">list</span>(</span>
+<span id="cb4-3"><a href="#cb4-3" tabindex="-1"></a>  <span class="at">fun1 =</span> <span class="cf">function</span>(x) <span class="fu">abs</span>(x <span class="sc">-</span> <span class="dv">1</span>),</span>
+<span id="cb4-4"><a href="#cb4-4" tabindex="-1"></a>  <span class="at">fun2 =</span> <span class="cf">function</span>(x) <span class="fu">abs</span>(x <span class="sc">-</span> <span class="dv">3</span>),</span>
+<span id="cb4-5"><a href="#cb4-5" tabindex="-1"></a>  <span class="at">fun3 =</span> <span class="cf">function</span>(x) <span class="fu">abs</span>(x <span class="sc">-</span> <span class="dv">5</span>),</span>
+<span id="cb4-6"><a href="#cb4-6" tabindex="-1"></a>  <span class="at">fun4 =</span> <span class="cf">function</span>(x) <span class="fu">abs</span>(x <span class="sc">-</span> <span class="dv">7</span>)</span>
+<span id="cb4-7"><a href="#cb4-7" tabindex="-1"></a>)</span>
+<span id="cb4-8"><a href="#cb4-8" tabindex="-1"></a></span>
+<span id="cb4-9"><a href="#cb4-9" tabindex="-1"></a>data_raw_predict <span class="ot">&lt;-</span> pbc3[pbc3<span class="sc">$</span>id <span class="sc">==</span> <span class="dv">2</span>, ]</span>
+<span id="cb4-10"><a href="#cb4-10" tabindex="-1"></a>data_predict_all <span class="ot">&lt;-</span> <span class="fu">list</span>(data_raw_predict, data_raw_predict)</span>
+<span id="cb4-11"><a href="#cb4-11" tabindex="-1"></a></span>
+<span id="cb4-12"><a href="#cb4-12" tabindex="-1"></a>risk <span class="ot">&lt;-</span> <span class="fu">dynamicPrediction</span>(</span>
+<span id="cb4-13"><a href="#cb4-13" tabindex="-1"></a>  data_predict_all, long_fit_all, survival_fit_all,</span>
+<span id="cb4-14"><a href="#cb4-14" tabindex="-1"></a>  <span class="at">prediction_time =</span> <span class="dv">5</span>, <span class="at">horizon =</span> <span class="dv">1</span>, <span class="at">time_variable =</span> <span class="st">&quot;year&quot;</span>,</span>
+<span id="cb4-15"><a href="#cb4-15" tabindex="-1"></a>  survival_variable_all, survival_trans_function,</span>
+<span id="cb4-16"><a href="#cb4-16" tabindex="-1"></a>  <span class="at">bandcount1 =</span> <span class="dv">10</span>, <span class="at">bandcount2 =</span> <span class="dv">20</span></span>
+<span id="cb4-17"><a href="#cb4-17" tabindex="-1"></a>)</span>
+<span id="cb4-18"><a href="#cb4-18" tabindex="-1"></a></span>
+<span id="cb4-19"><a href="#cb4-19" tabindex="-1"></a>risk</span>
+<span id="cb4-20"><a href="#cb4-20" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb4-21"><a href="#cb4-21" tabindex="-1"></a><span class="co">#&gt; =================================================================</span></span>
+<span id="cb4-22"><a href="#cb4-22" tabindex="-1"></a><span class="co">#&gt;  Dynamic Prediction - Event Risk</span></span>
+<span id="cb4-23"><a href="#cb4-23" tabindex="-1"></a><span class="co">#&gt; -----------------------------------------------------------------</span></span>
+<span id="cb4-24"><a href="#cb4-24" tabindex="-1"></a><span class="co">#&gt;   Competing risks   : Yes</span></span>
+<span id="cb4-25"><a href="#cb4-25" tabindex="-1"></a><span class="co">#&gt;   Subjects          : 1</span></span>
+<span id="cb4-26"><a href="#cb4-26" tabindex="-1"></a><span class="co">#&gt; -----------------------------------------------------------------</span></span>
+<span id="cb4-27"><a href="#cb4-27" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb4-28"><a href="#cb4-28" tabindex="-1"></a><span class="co">#&gt;  Subject Cause 1 Risk Cause 2 Risk Total Risk</span></span>
+<span id="cb4-29"><a href="#cb4-29" tabindex="-1"></a><span class="co">#&gt;       S1       0.0271       0.0012     0.0283</span></span>
+<span id="cb4-30"><a href="#cb4-30" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb4-31"><a href="#cb4-31" tabindex="-1"></a><span class="co">#&gt; =================================================================</span></span></code></pre></div>
+<p><code>survival_variable_all</code>/<code>survival_trans_function</code>
+almost always follow the same convention shown above: variables named
+<code>&quot;Tyears1&quot;</code>, <code>&quot;Tyears2&quot;</code>, …, each the absolute
+distance from a fixed cut point. <code>survivalTrans()</code> builds
+exactly that pair from a plain vector of cut points, so you do not have
+to hand-write two matching parallel lists:</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a>trans <span class="ot">&lt;-</span> <span class="fu">survivalTrans</span>(<span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">3</span>, <span class="dv">5</span>, <span class="dv">7</span>))</span>
+<span id="cb5-2"><a href="#cb5-2" tabindex="-1"></a><span class="fu">identical</span>(trans<span class="sc">$</span>survival_variable_all, survival_variable_all)</span>
+<span id="cb5-3"><a href="#cb5-3" tabindex="-1"></a><span class="co">#&gt; [1] TRUE</span></span>
+<span id="cb5-4"><a href="#cb5-4" tabindex="-1"></a>trans<span class="sc">$</span>survival_trans_function[[<span class="dv">1</span>]](<span class="dv">2</span>)</span>
+<span id="cb5-5"><a href="#cb5-5" tabindex="-1"></a><span class="co">#&gt; [1] 1</span></span></code></pre></div>
+<p><code>risk_prob_1</code> and <code>risk_prob_2</code> are the
+predicted probabilities of experiencing each of the two competing event
+types within the one-year horizon, conditional on the patient’s
+longitudinal history and survival to <code>prediction_time</code>.
+(<code>risk_prob_2</code> is <code>NULL</code> whenever
+<code>survival_fit_all</code> was fit without
+<code>form_conditional_cr</code>.)</p>
+</div>
+<div id="step-4-predict-a-future-biomarker-value-with-dynamicpredictionbio" class="section level2">
+<h2>Step 4: Predict a future biomarker value with
+<code>dynamicPredictionBio()</code></h2>
+<p><code>dynamicPredictionBio()</code> answers a different question: not
+<em>whether</em> an event happens, but what a specific biomarker’s value
+is likely to be at <code>prediction_time + horizon</code>, conditional
+on survival. <code>bio_i</code> selects the biomarker by its position in
+<code>long_fit_all</code> (<code>1</code> = <code>serBilir</code>
+here).</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a>bio_pred <span class="ot">&lt;-</span> <span class="fu">dynamicPredictionBio</span>(</span>
+<span id="cb6-2"><a href="#cb6-2" tabindex="-1"></a>  <span class="at">bio_i =</span> <span class="dv">1</span>, data_predict_all, long_fit_all, survival_fit_all,</span>
+<span id="cb6-3"><a href="#cb6-3" tabindex="-1"></a>  <span class="at">prediction_time =</span> <span class="dv">5</span>, <span class="at">horizon =</span> <span class="dv">1</span>, <span class="at">time_variable =</span> <span class="st">&quot;year&quot;</span>,</span>
+<span id="cb6-4"><a href="#cb6-4" tabindex="-1"></a>  survival_variable_all, survival_trans_function,</span>
+<span id="cb6-5"><a href="#cb6-5" tabindex="-1"></a>  <span class="at">bandcount2 =</span> <span class="dv">20</span>, <span class="at">bandcount3 =</span> <span class="dv">50</span></span>
+<span id="cb6-6"><a href="#cb6-6" tabindex="-1"></a>)</span>
+<span id="cb6-7"><a href="#cb6-7" tabindex="-1"></a></span>
+<span id="cb6-8"><a href="#cb6-8" tabindex="-1"></a>bio_pred<span class="sc">$</span>Y_predict</span>
+<span id="cb6-9"><a href="#cb6-9" tabindex="-1"></a><span class="co">#&gt; [1] 1.03628</span></span></code></pre></div>
+<p><code>Y_predict</code> is the MAP (most likely) predicted value;
+<code>Y_density</code>/<code>Y_all</code> give the full predicted
+density over a grid of candidate values, which is what
+<code>predictPlot()</code> visualizes (see
+<code>?predictPlot</code>).</p>
+</div>
+<div id="choosing-bandcount1-bandcount2-bandcount3" class="section level2">
+<h2>Choosing <code>bandcount1</code>, <code>bandcount2</code>,
+<code>bandcount3</code></h2>
+<p><code>dynamicPrediction()</code> and
+<code>dynamicPredictionBio()</code> estimate their outputs by numerical
+integration over patient-specific time and biomarker grids. The
+<code>bandcount*</code> arguments control how fine those grids are:</p>
+<ul>
+<li><strong><code>bandcount1</code></strong>
+(<code>dynamicPrediction()</code> only) is the number of grid points
+spanning the prediction window itself, from <code>prediction_time</code>
+to <code>prediction_time + horizon</code>. This is the numerator of the
+risk probability.</li>
+<li><strong><code>bandcount2</code></strong> is the number of grid
+points spanning <code>[prediction_time, upper_bound]</code>, where
+<code>upper_bound</code> is set internally to twice the longest observed
+survival/censoring time among at-risk patients. This approximates
+“integrating out to infinity” for the denominator that normalizes the
+risk probability. A wider follow-up range needs a larger
+<code>bandcount2</code> to keep the grid spacing comparable.</li>
+<li><strong><code>bandcount3</code></strong>
+(<code>dynamicPredictionBio()</code> only) is the number of points in
+the candidate-biomarker-value grid (<code>Y_all</code>) used to build
+the predicted density and locate its mode (<code>Y_predict</code>). It
+controls the resolution of the density curve, not a time integral.</li>
+</ul>
+<p>Larger values give more accurate, smoother results at the cost of
+more computation. There is no universal “correct” value because it
+depends on how quickly the underlying hazard and biomarker trajectories
+change and on the length of follow-up in your data — so the practical
+approach is a <strong>convergence check</strong>: run the prediction
+once with the defaults, once with every <code>bandcount*</code> doubled,
+and confirm the results barely move.</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" tabindex="-1"></a>risk_default <span class="ot">&lt;-</span> <span class="fu">dynamicPrediction</span>(</span>
+<span id="cb7-2"><a href="#cb7-2" tabindex="-1"></a>  data_predict_all, long_fit_all, survival_fit_all,</span>
+<span id="cb7-3"><a href="#cb7-3" tabindex="-1"></a>  <span class="at">prediction_time =</span> <span class="dv">5</span>, <span class="at">horizon =</span> <span class="dv">1</span>, <span class="at">time_variable =</span> <span class="st">&quot;year&quot;</span>,</span>
+<span id="cb7-4"><a href="#cb7-4" tabindex="-1"></a>  survival_variable_all, survival_trans_function,</span>
+<span id="cb7-5"><a href="#cb7-5" tabindex="-1"></a>  <span class="at">bandcount1 =</span> <span class="dv">10</span>, <span class="at">bandcount2 =</span> <span class="dv">20</span></span>
+<span id="cb7-6"><a href="#cb7-6" tabindex="-1"></a>)</span>
+<span id="cb7-7"><a href="#cb7-7" tabindex="-1"></a></span>
+<span id="cb7-8"><a href="#cb7-8" tabindex="-1"></a>risk_doubled <span class="ot">&lt;-</span> <span class="fu">dynamicPrediction</span>(</span>
+<span id="cb7-9"><a href="#cb7-9" tabindex="-1"></a>  data_predict_all, long_fit_all, survival_fit_all,</span>
+<span id="cb7-10"><a href="#cb7-10" tabindex="-1"></a>  <span class="at">prediction_time =</span> <span class="dv">5</span>, <span class="at">horizon =</span> <span class="dv">1</span>, <span class="at">time_variable =</span> <span class="st">&quot;year&quot;</span>,</span>
+<span id="cb7-11"><a href="#cb7-11" tabindex="-1"></a>  survival_variable_all, survival_trans_function,</span>
+<span id="cb7-12"><a href="#cb7-12" tabindex="-1"></a>  <span class="at">bandcount1 =</span> <span class="dv">20</span>, <span class="at">bandcount2 =</span> <span class="dv">40</span></span>
+<span id="cb7-13"><a href="#cb7-13" tabindex="-1"></a>)</span>
+<span id="cb7-14"><a href="#cb7-14" tabindex="-1"></a></span>
+<span id="cb7-15"><a href="#cb7-15" tabindex="-1"></a><span class="fu">abs</span>(risk_default<span class="sc">$</span>risk_prob_1 <span class="sc">-</span> risk_doubled<span class="sc">$</span>risk_prob_1)</span>
+<span id="cb7-16"><a href="#cb7-16" tabindex="-1"></a><span class="co">#&gt; [1] 0.003174651</span></span>
+<span id="cb7-17"><a href="#cb7-17" tabindex="-1"></a><span class="fu">abs</span>(risk_default<span class="sc">$</span>risk_prob_2 <span class="sc">-</span> risk_doubled<span class="sc">$</span>risk_prob_2)</span>
+<span id="cb7-18"><a href="#cb7-18" tabindex="-1"></a><span class="co">#&gt; [1] 0.0001377631</span></span></code></pre></div>
+<p>If doubling the <code>bandcount*</code> values changes the result by
+more than you can tolerate, keep doubling until it doesn’t; if it barely
+changes anything (as above), the smaller, cheaper value is fine to use.
+The same check applies to <code>bandcount3</code> for
+<code>dynamicPredictionBio()</code>.</p>
+</div>
+<div id="friendly-error-messages" class="section level2">
+<h2>Friendly error messages</h2>
+<p>The pipeline functions validate their arguments before doing any
+model fitting or numerical integration, so common mistakes fail fast
+with a message that names the offending argument — instead of a cryptic
+error from deep inside <code>model.matrix()</code> or list indexing. For
+example, passing a single <code>data.frame</code> instead of a list to
+<code>dynamicPrediction()</code>:</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" tabindex="-1"></a><span class="fu">dynamicPrediction</span>(</span>
+<span id="cb8-2"><a href="#cb8-2" tabindex="-1"></a>  data_predict_all[[<span class="dv">1</span>]], long_fit_all, survival_fit_all,</span>
+<span id="cb8-3"><a href="#cb8-3" tabindex="-1"></a>  <span class="at">prediction_time =</span> <span class="dv">5</span>, <span class="at">horizon =</span> <span class="dv">1</span>, <span class="at">time_variable =</span> <span class="st">&quot;year&quot;</span>,</span>
+<span id="cb8-4"><a href="#cb8-4" tabindex="-1"></a>  survival_variable_all, survival_trans_function,</span>
+<span id="cb8-5"><a href="#cb8-5" tabindex="-1"></a>  <span class="at">bandcount1 =</span> <span class="dv">10</span>, <span class="at">bandcount2 =</span> <span class="dv">20</span></span>
+<span id="cb8-6"><a href="#cb8-6" tabindex="-1"></a>)</span>
+<span id="cb8-7"><a href="#cb8-7" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb8-8"><a href="#cb8-8" tabindex="-1"></a><span class="co">#&gt; =================================================================</span></span>
+<span id="cb8-9"><a href="#cb8-9" tabindex="-1"></a><span class="co">#&gt;  Dynamic Prediction - Event Risk</span></span>
+<span id="cb8-10"><a href="#cb8-10" tabindex="-1"></a><span class="co">#&gt; -----------------------------------------------------------------</span></span>
+<span id="cb8-11"><a href="#cb8-11" tabindex="-1"></a><span class="co">#&gt;   Competing risks   : Yes</span></span>
+<span id="cb8-12"><a href="#cb8-12" tabindex="-1"></a><span class="co">#&gt;   Subjects          : 1</span></span>
+<span id="cb8-13"><a href="#cb8-13" tabindex="-1"></a><span class="co">#&gt; -----------------------------------------------------------------</span></span>
+<span id="cb8-14"><a href="#cb8-14" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb8-15"><a href="#cb8-15" tabindex="-1"></a><span class="co">#&gt;  Subject Cause 1 Risk Cause 2 Risk Total Risk</span></span>
+<span id="cb8-16"><a href="#cb8-16" tabindex="-1"></a><span class="co">#&gt;       S1       0.0271       0.0012     0.0283</span></span>
+<span id="cb8-17"><a href="#cb8-17" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb8-18"><a href="#cb8-18" tabindex="-1"></a><span class="co">#&gt; =================================================================</span></span></code></pre></div>
+<p>or a formula referencing a column that doesn’t exist:</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" tabindex="-1"></a><span class="fu">longitudinalSub</span>(pbc3, serBilir <span class="sc">~</span> year <span class="sc">+</span> not_a_column, <span class="sc">~</span> year <span class="sc">|</span> id)</span>
+<span id="cb9-2"><a href="#cb9-2" tabindex="-1"></a><span class="co">#&gt; Error: Variable(s) used in `long_sub_fixed[[1]]/long_sub_random[[1]]` not found in `data_fit_all[[1]]`: not_a_column.</span></span></code></pre></div>
+</div>
+<div id="where-to-go-next" class="section level2">
+<h2>Where to go next</h2>
+<ul>
+<li><code>?predictPlot</code> and <code>?riskPlot</code> visualize the
+outputs of
+<code>dynamicPredictionBio()</code>/<code>dynamicPrediction()</code> for
+a single patient.</li>
+<li><code>?cmtPlot</code> plots observed longitudinal trajectories
+stratified by eventual outcome, useful for checking whether a biomarker
+looks informative before fitting.</li>
+</ul>
+</div>
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

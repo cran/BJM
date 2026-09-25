@@ -4,20 +4,20 @@
   sep_line  <- paste(rep("=", 65), collapse = "")
   dash_line <- paste(rep("-", 65), collapse = "")
 
-  coxph_fit   <- x[[1]]
-  cox_formula <- x[[2]]
-  glm_fit     <- x[[3]]
-  glm_form    <- x[[4]]
+  coxph_fit   <- x$coxph_fit
+  cox_formula <- x$form_marginal_surv
+  glm_fit     <- x$glm_fit
+  glm_form    <- x$form_conditional_cr
   has_cr      <- !is.null(glm_fit)
   s_cox       <- summary(coxph_fit)
 
   # -- Header ------------------------------------------------------------
   cat("\n")
   cat("Call:\n")
-  cat(sprintf("survivalSub(formMarginalSurv = %s",
+  cat(sprintf("survivalSub(form_marginal_surv = %s",
               deparse(cox_formula, width.cutoff = 50L)))
   if (has_cr)
-    cat(sprintf(",\n            formConditionalCR = %s",
+    cat(sprintf(",\n            form_conditional_cr = %s",
                 deparse(glm_form, width.cutoff = 50L)))
   cat(")\n")
 
@@ -130,11 +130,11 @@
 #'
 #' @examples
 #' data(pbc3)
-#' data.survival.fitting <- pbc3[!duplicated(pbc3$id), ]
-#' formMarginalSurv  <- Surv(years, status3) ~ age + sex
-#' formConditionalCR <- status4 ~ years + age + sex
-#' survival_fit_all  <- survivalSub(data.survival.fitting,
-#'                                  formMarginalSurv, formConditionalCR)
+#' data_survival_fitting <- pbc3[!duplicated(pbc3$id), ]
+#' form_marginal_surv  <- Surv(years, status3) ~ age + sex
+#' form_conditional_cr <- status4 ~ years + age + sex
+#' survival_fit_all  <- survivalSub(data_survival_fitting,
+#'                                  form_marginal_surv, form_conditional_cr)
 #' survival_fit_all   # triggers print.survivalSub.BJM automatically
 #'
 #' @export
@@ -159,11 +159,11 @@ print.survivalSub.BJM <- function(x, digits = 4, ...) {
 #'
 #' @examples
 #' data(pbc3)
-#' data.survival.fitting <- pbc3[!duplicated(pbc3$id), ]
-#' formMarginalSurv  <- Surv(years, status3) ~ age + sex
-#' formConditionalCR <- status4 ~ years + age + sex
-#' survival_fit_all  <- survivalSub(data.survival.fitting,
-#'                                  formMarginalSurv, formConditionalCR)
+#' data_survival_fitting <- pbc3[!duplicated(pbc3$id), ]
+#' form_marginal_surv  <- Surv(years, status3) ~ age + sex
+#' form_conditional_cr <- status4 ~ years + age + sex
+#' survival_fit_all  <- survivalSub(data_survival_fitting,
+#'                                  form_marginal_surv, form_conditional_cr)
 #' summary(survival_fit_all)
 #'
 #' @export
@@ -171,18 +171,11 @@ summary.survivalSub.BJM <- function(object, digits = 4, ...) {
   .format_survivalSub(object, digits = digits, extended = TRUE)
 
   out <- list(
-    cox_summary = summary(object[[1]]),
-    glm_summary = if (!is.null(object[[3]])) summary(object[[3]]) else NULL
+    cox_summary = summary(object$coxph_fit),
+    glm_summary = if (!is.null(object$glm_fit)) summary(object$glm_fit) else NULL
   )
   class(out) <- "summary.survivalSub.BJM"
   invisible(out)
-}
-
-
-#' @rdname print.survivalSub.BJM
-#' @export
-print_survivalSub <- function(x, digits = 4, ...) {
-  print.survivalSub.BJM(x, digits = digits, ...)
 }
 
 
@@ -192,9 +185,9 @@ print_survivalSub <- function(x, digits = 4, ...) {
   sep_line  <- paste(rep("=", 65), collapse = "")
   dash_line <- paste(rep("-", 65), collapse = "")
 
-  lfit         <- x[[1]]
-  Sigma_fit    <- x[[2]]
-  LongSubFixed <- x[[3]]
+  lfit         <- x$lfit
+  Sigma_fit    <- x$Sigma_fit
+  long_sub_fixed <- x$long_sub_fixed
   M            <- length(lfit)
 
   cat("\n")
@@ -205,8 +198,8 @@ print_survivalSub <- function(x, digits = 4, ...) {
   if (extended) {
     cat("\nData Descriptives:\n")
     for (m in seq_len(M)) {
-      nm <- if (!is.null(names(LongSubFixed)[m]) && names(LongSubFixed)[m] != "")
-              names(LongSubFixed)[m] else paste0("Outcome ", m)
+      nm <- if (!is.null(names(long_sub_fixed)[m]) && names(long_sub_fixed)[m] != "")
+              names(long_sub_fixed)[m] else paste0("Outcome ", m)
       n_subj <- lfit[[m]]$dims$ngrps[1]
       n_obs  <- lfit[[m]]$dims$N
       cat(sprintf("  [%d] %-15s  subjects = %d,  observations = %d\n",
@@ -219,9 +212,9 @@ print_survivalSub <- function(x, digits = 4, ...) {
 
   for (m in seq_len(M)) {
     fit_m  <- lfit[[m]]
-    form_m <- LongSubFixed[[m]]
-    nm     <- if (!is.null(names(LongSubFixed)[m]) && names(LongSubFixed)[m] != "")
-                names(LongSubFixed)[m] else paste0("Outcome ", m)
+    form_m <- long_sub_fixed[[m]]
+    nm     <- if (!is.null(names(long_sub_fixed)[m]) && names(long_sub_fixed)[m] != "")
+                names(long_sub_fixed)[m] else paste0("Outcome ", m)
 
     cat(dash_line, "\n", sep = "")
     cat(sprintf(" [%d] %s\n", m, nm))
@@ -301,28 +294,27 @@ print.longitudinalSub.BJM <- function(x, digits = 4, ...) {
 #' @export
 summary.longitudinalSub.BJM <- function(object, digits = 4, ...) {
   .format_longitudinalSub(object, digits = digits, extended = TRUE)
-  out <- lapply(object[[1]], summary)
+  out <- lapply(object$lfit, summary)
   class(out) <- "summary.longitudinalSub.BJM"
   invisible(out)
 }
 
 
-# backward-compatible alias
-#' @rdname print.longitudinalSub.BJM
-#' @export
-print_longitudinalSub <- function(x, digits = 4, ...) {
-  print.longitudinalSub.BJM(x, digits = digits, ...)
-}
-
-
-#' Combined print summary for a fitted BJM
+#' Print both sub-models of a fitted backward joint model
+#'
+#' Convenience function that prints the longitudinal and survival
+#' sub-model summaries together. Unlike \code{print.longitudinalSub.BJM}
+#' and \code{print.survivalSub.BJM}, this does not dispatch on a single
+#' \code{"BJM"}-classed object, because \code{\link{longitudinalSub}} and
+#' \code{\link{survivalSub}} are fit and returned separately; it simply
+#' prints both fit objects you already have.
 #'
 #' @param long_fit_all Output from \code{\link{longitudinalSub}}.
 #' @param survival_fit_all Output from \code{\link{survivalSub}}.
 #' @param digits Number of significant digits. Default is 4.
 #' @return Invisibly returns a named list with both fit objects.
 #' @export
-print_BJM <- function(long_fit_all, survival_fit_all, digits = 4) {
+printBJM <- function(long_fit_all, survival_fit_all, digits = 4) {
   cat("\n")
   cat("Backward Joint Model (BJM) - Model Summary\n")
   print.longitudinalSub.BJM(long_fit_all,  digits = digits)
@@ -334,7 +326,7 @@ print_BJM <- function(long_fit_all, survival_fit_all, digits = 4) {
 
 # -- Internal formatting helper for dynamicPrediction (not exported) ------------
 .format_dynamicPrediction <- function(x, digits = 4,
-                                      prediction.time = NULL,
+                                      prediction_time = NULL,
                                       horizon = NULL,
                                       subject_ids = NULL,
                                       extended = FALSE) {
@@ -342,8 +334,8 @@ print_BJM <- function(long_fit_all, survival_fit_all, digits = 4) {
   sep_line  <- paste(rep("=", 65), collapse = "")
   dash_line <- paste(rep("-", 65), collapse = "")
 
-  risk0  <- x[[1]]
-  risk1  <- x[[2]]
+  risk0  <- x$risk_prob_1
+  risk1  <- x$risk_prob_2
   has_cr <- !is.null(risk1)
   n_subj <- length(risk0)
   ids    <- if (!is.null(subject_ids)) as.character(subject_ids) else
@@ -352,13 +344,13 @@ print_BJM <- function(long_fit_all, survival_fit_all, digits = 4) {
   cat("\n", sep_line, "\n", sep = "")
   cat(" Dynamic Prediction - Event Risk\n")
   cat(dash_line, "\n", sep = "")
-  if (!is.null(prediction.time))
-    cat(sprintf("  Prediction time   : %g\n", prediction.time))
+  if (!is.null(prediction_time))
+    cat(sprintf("  Prediction time   : %g\n", prediction_time))
   if (!is.null(horizon))
     cat(sprintf("  Prediction horizon: %g\n", horizon))
-  if (!is.null(prediction.time) && !is.null(horizon))
+  if (!is.null(prediction_time) && !is.null(horizon))
     cat(sprintf("  Risk window       : (%g, %g]\n",
-                prediction.time, prediction.time + horizon))
+                prediction_time, prediction_time + horizon))
   cat(sprintf("  Competing risks   : %s\n", ifelse(has_cr, "Yes", "No")))
   cat(sprintf("  Subjects          : %d\n", n_subj))
   cat(dash_line, "\n\n", sep = "")
@@ -411,19 +403,19 @@ print_BJM <- function(long_fit_all, survival_fit_all, digits = 4) {
 #' at the console.
 #'
 #' @param x A \code{dynamicPrediction.BJM} object.
-#' @param prediction.time Landmark time (for display). Default \code{NULL}.
+#' @param prediction_time Landmark time (for display). Default \code{NULL}.
 #' @param horizon Prediction horizon (for display). Default \code{NULL}.
 #' @param subject_ids Optional subject ID labels.
 #' @param digits Decimal places. Default 4.
 #' @param ... Additional arguments (currently unused).
 #' @return Invisibly returns \code{x}.
 #' @export
-print.dynamicPrediction.BJM <- function(x, prediction.time = NULL,
+print.dynamicPrediction.BJM <- function(x, prediction_time = NULL,
                                         horizon = NULL,
                                         subject_ids = NULL,
                                         digits = 4, ...) {
   .format_dynamicPrediction(x, digits = digits,
-                             prediction.time = prediction.time,
+                             prediction_time = prediction_time,
                              horizon = horizon,
                              subject_ids = subject_ids,
                              extended = FALSE)
@@ -436,19 +428,19 @@ print.dynamicPrediction.BJM <- function(x, prediction.time = NULL,
 #' Like \code{print} but also shows mean, SD, and range of predicted risks.
 #'
 #' @param object A \code{dynamicPrediction.BJM} object.
-#' @param prediction.time Landmark time (for display). Default \code{NULL}.
+#' @param prediction_time Landmark time (for display). Default \code{NULL}.
 #' @param horizon Prediction horizon (for display). Default \code{NULL}.
 #' @param subject_ids Optional subject ID labels.
 #' @param digits Decimal places. Default 4.
 #' @param ... Additional arguments (currently unused).
 #' @return Invisibly returns \code{object}.
 #' @export
-summary.dynamicPrediction.BJM <- function(object, prediction.time = NULL,
+summary.dynamicPrediction.BJM <- function(object, prediction_time = NULL,
                                           horizon = NULL,
                                           subject_ids = NULL,
                                           digits = 4, ...) {
   .format_dynamicPrediction(object, digits = digits,
-                             prediction.time = prediction.time,
+                             prediction_time = prediction_time,
                              horizon = horizon,
                              subject_ids = subject_ids,
                              extended = TRUE)
@@ -456,26 +448,11 @@ summary.dynamicPrediction.BJM <- function(object, prediction.time = NULL,
 }
 
 
-# backward-compatible alias
-#' @rdname print.dynamicPrediction.BJM
-#' @export
-print_dynamicPrediction <- function(x, prediction.time = NULL,
-                                    horizon = NULL,
-                                    subject_ids = NULL,
-                                    digits = 4, ...) {
-  print.dynamicPrediction.BJM(x,
-                               prediction.time = prediction.time,
-                               horizon = horizon,
-                               subject_ids = subject_ids,
-                               digits = digits, ...)
-}
-
-
 # -- Internal formatting helper for dynamicPredictionBio (not exported) ---------
 .format_dynamicPredictionBio <- function(x, digits = 4,
                                          bio_i = NULL,
                                          long_fit_all = NULL,
-                                         prediction.time = NULL,
+                                         prediction_time = NULL,
                                          horizon = NULL,
                                          subject_ids = NULL,
                                          extended = FALSE) {
@@ -483,15 +460,15 @@ print_dynamicPrediction <- function(x, prediction.time = NULL,
   sep_line  <- paste(rep("=", 65), collapse = "")
   dash_line <- paste(rep("-", 65), collapse = "")
 
-  Y_predict <- x[[1]]
-  Y_density <- x[[2]]
-  Y_all     <- x[[3]]
+  Y_predict <- x$Y_predict
+  Y_density <- x$Y_density
+  Y_all     <- x$Y_all
   n_subj    <- length(Y_predict)
   ids       <- if (!is.null(subject_ids)) as.character(subject_ids) else
                  paste0("S", seq_len(n_subj))
 
   bio_name <- if (!is.null(bio_i) && !is.null(long_fit_all)) {
-    tryCatch(as.character(formula(long_fit_all[[3]][[bio_i]])[[2]]),
+    tryCatch(as.character(formula(long_fit_all$long_sub_fixed[[bio_i]])[[2]]),
              error = function(e) paste0("Biomarker ", bio_i))
   } else if (!is.null(bio_i)) {
     paste0("Biomarker ", bio_i)
@@ -500,12 +477,12 @@ print_dynamicPrediction <- function(x, prediction.time = NULL,
   cat("\n", sep_line, "\n", sep = "")
   cat(sprintf(" Dynamic Prediction - Future %s\n", bio_name))
   cat(dash_line, "\n", sep = "")
-  if (!is.null(prediction.time))
-    cat(sprintf("  Prediction time   : %g\n", prediction.time))
+  if (!is.null(prediction_time))
+    cat(sprintf("  Prediction time   : %g\n", prediction_time))
   if (!is.null(horizon))
     cat(sprintf("  Prediction horizon: %g\n", horizon))
-  if (!is.null(prediction.time) && !is.null(horizon))
-    cat(sprintf("  Predicted at      : t = %g\n", prediction.time + horizon))
+  if (!is.null(prediction_time) && !is.null(horizon))
+    cat(sprintf("  Predicted at      : t = %g\n", prediction_time + horizon))
   cat(sprintf("  Y grid range      : [%.4g, %.4g]  (%d points)\n",
               min(Y_all), max(Y_all), length(Y_all)))
   cat(sprintf("  Subjects          : %d\n", n_subj))
@@ -570,7 +547,7 @@ print_dynamicPrediction <- function(x, prediction.time = NULL,
 #' @param x A \code{dynamicPredictionBio.BJM} object.
 #' @param bio_i Biomarker index (for label lookup). Default \code{NULL}.
 #' @param long_fit_all \code{longitudinalSub.BJM} object for name lookup.
-#' @param prediction.time Landmark time (for display). Default \code{NULL}.
+#' @param prediction_time Landmark time (for display). Default \code{NULL}.
 #' @param horizon Prediction horizon (for display). Default \code{NULL}.
 #' @param subject_ids Optional subject ID labels.
 #' @param digits Decimal places. Default 4.
@@ -579,14 +556,14 @@ print_dynamicPrediction <- function(x, prediction.time = NULL,
 #' @export
 print.dynamicPredictionBio.BJM <- function(x, bio_i = NULL,
                                             long_fit_all = NULL,
-                                            prediction.time = NULL,
+                                            prediction_time = NULL,
                                             horizon = NULL,
                                             subject_ids = NULL,
                                             digits = 4, ...) {
   .format_dynamicPredictionBio(x, digits = digits,
                                 bio_i = bio_i,
                                 long_fit_all = long_fit_all,
-                                prediction.time = prediction.time,
+                                prediction_time = prediction_time,
                                 horizon = horizon,
                                 subject_ids = subject_ids,
                                 extended = FALSE)
@@ -601,7 +578,7 @@ print.dynamicPredictionBio.BJM <- function(x, bio_i = NULL,
 #' @param object A \code{dynamicPredictionBio.BJM} object.
 #' @param bio_i Biomarker index (for label lookup). Default \code{NULL}.
 #' @param long_fit_all \code{longitudinalSub.BJM} object for name lookup.
-#' @param prediction.time Landmark time (for display). Default \code{NULL}.
+#' @param prediction_time Landmark time (for display). Default \code{NULL}.
 #' @param horizon Prediction horizon (for display). Default \code{NULL}.
 #' @param subject_ids Optional subject ID labels.
 #' @param digits Decimal places. Default 4.
@@ -610,35 +587,16 @@ print.dynamicPredictionBio.BJM <- function(x, bio_i = NULL,
 #' @export
 summary.dynamicPredictionBio.BJM <- function(object, bio_i = NULL,
                                               long_fit_all = NULL,
-                                              prediction.time = NULL,
+                                              prediction_time = NULL,
                                               horizon = NULL,
                                               subject_ids = NULL,
                                               digits = 4, ...) {
   .format_dynamicPredictionBio(object, digits = digits,
                                 bio_i = bio_i,
                                 long_fit_all = long_fit_all,
-                                prediction.time = prediction.time,
+                                prediction_time = prediction_time,
                                 horizon = horizon,
                                 subject_ids = subject_ids,
                                 extended = TRUE)
   invisible(object)
-}
-
-
-# backward-compatible alias
-#' @rdname print.dynamicPredictionBio.BJM
-#' @export
-print_dynamicPredictionBio <- function(x, bio_i = NULL,
-                                       long_fit_all = NULL,
-                                       prediction.time = NULL,
-                                       horizon = NULL,
-                                       subject_ids = NULL,
-                                       digits = 4, ...) {
-  print.dynamicPredictionBio.BJM(x,
-                                  bio_i = bio_i,
-                                  long_fit_all = long_fit_all,
-                                  prediction.time = prediction.time,
-                                  horizon = horizon,
-                                  subject_ids = subject_ids,
-                                  digits = digits, ...)
 }

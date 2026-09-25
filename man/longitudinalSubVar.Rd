@@ -3,12 +3,12 @@
 \name{longitudinalSubVar}
 \alias{longitudinalSubVar}
 \title{Variance-covariance matrix
-Reference: package ‘lmm’ and package "joineRML" function \code{mvlme}.}
+Reference: package "lmm" and package "joineRML" function \code{mvlme}.}
 \usage{
 longitudinalSubVar(thetaLong, l, tol.em, verbose)
 }
 \description{
 Variance-covariance matrix
-Reference: package ‘lmm’ and package "joineRML" function \code{mvlme}.
+Reference: package "lmm" and package "joineRML" function \code{mvlme}.
 }
 \keyword{internal}

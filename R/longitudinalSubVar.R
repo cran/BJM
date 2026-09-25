@@ -1,5 +1,5 @@
 #' Variance-covariance matrix
-#' Reference: package ‘lmm’ and package "joineRML" function \code{mvlme}. 
+#' Reference: package "lmm" and package "joineRML" function \code{mvlme}.
 #' @keywords internal
 longitudinalSubVar <- function(thetaLong, l, tol.em, verbose) {
   

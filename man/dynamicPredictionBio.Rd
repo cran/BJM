@@ -6,30 +6,32 @@
 \usage{
 dynamicPredictionBio(
   bio_i,
-  data.predict.all,
+  data_predict_all,
   long_fit_all,
   survival_fit_all,
-  prediction.time,
+  prediction_time,
   horizon,
   time_variable,
-  survivalVariableAll,
-  survivalTransFunction,
-  bandcount2 = 40,
-  bandcount3 = 300
+  survival_variable_all,
+  survival_trans_function,
+  bandcount2 = "auto",
+  bandcount3 = "auto"
 )
 }
 \arguments{
 \item{bio_i}{Biomarker used to do prediction}
 
-\item{data.predict.all}{This involves a collection of \code{data.frame} objects for
+\item{data_predict_all}{This involves a collection of \code{data.frame} objects for
 dynamic prediction, each corresponding to a distinct longitudinal outcome.
-These data frames should contain the variables specified in \code{LongSubFixed}
-and \code{LongSubRandom}. Utilizing a list structure
+These data frames should contain the variables specified in \code{long_sub_fixed}
+and \code{long_sub_random}. Utilizing a list structure
 allows for the incorporation of multiple longitudinal outcomes,
 each potentially following different measurement protocols.
 In instances where all longitudinal outcomes are recorded at identical
 time points across patients, a singular \code{data.frame} object may
-be used in a \code{list}. It is presumed that each data frame is
+be used in a \code{list}. Alternatively, a single bare \code{data.frame}
+(not wrapped in a list) may be supplied directly; it is then reused for
+every longitudinal outcome. It is presumed that each data frame is
 structured in a long format.}
 
 \item{long_fit_all}{Outputs from the model fitting process using the \code{nlme} package,
@@ -39,47 +41,79 @@ encompassing the results and parameters obtained from the analysis.}
 procedure, utilizing the \code{coxph} function. These outputs include the comprehensive
 findings and variables derived from the analysis.}
 
-\item{prediction.time}{Time used to make the prediction}
+\item{prediction_time}{Time used to make the prediction}
 
 \item{horizon}{Prediction horizon}
 
 \item{time_variable}{The name of time variable in linear mixed model.}
 
-\item{survivalVariableAll}{The name of the transformed time-to-event outcomes variable.}
+\item{survival_variable_all}{The name of the transformed time-to-event outcomes variable.}
 
-\item{survivalTransFunction}{The transformation function used for time-to-event outcomes,
-in the order of \code{survivalVariableAll}.}
+\item{survival_trans_function}{The transformation function used for time-to-event outcomes,
+in the order of \code{survival_variable_all}.}
 
-\item{bandcount2}{The number of points used to perform the numerical integral,
-from the prediction time to infinity.}
+\item{bandcount2}{The number of grid points spanning
+\code{[prediction_time, upper_bound]}, where \code{upper_bound} is set
+internally to twice the longest observed survival/censoring time among
+at-risk patients; this approximates integrating out to infinity for the
+denominator that normalizes the predicted density. A wider follow-up range
+needs a larger \code{bandcount2} to keep the grid spacing comparable.
+Defaults to \code{"auto"} (see Details).}
 
-\item{bandcount3}{The number of points used to calculate the probability density function.}
+\item{bandcount3}{The number of points in the candidate-biomarker-value
+grid (\code{Y_all}) used to build the predicted density
+(\code{Y_density}) and locate its mode (\code{Y_predict}). This controls
+the resolution of the density curve, not a time integral; increase it if
+the density looks jagged or \code{Y_predict} jumps erratically between
+nearby grid points. Defaults to \code{"auto"} (see Details).}
 }
 \value{
-A probability matrix, where the rows (l_i) correspond to specific time points
-and the columns to individual patients. Each element within the matrix signifies
-the probability of a future event occurring, as dynamically predicted for each
-patient at each time point.
+An object of class \code{"dynamicPredictionBio.BJM"}, a named list with elements:
+\describe{
+\item{Y_predict}{A vector, one entry per patient, giving the MAP (most likely) predicted
+value of biomarker \code{bio_i} at \code{prediction_time + horizon}.}
+\item{Y_density}{A probability matrix whose rows correspond to the candidate biomarker
+values in \code{Y_all} and whose columns correspond to individual patients; each entry
+is the dynamically predicted density of the biomarker taking that value.}
+\item{Y_all}{The grid of candidate biomarker values used to build \code{Y_density}.}
+}
 }
 \description{
 The time values in the prediction data subset must be less than the
-specified \code{prediction.time} which is the prediction time. The time points for
+specified \code{prediction_time} which is the prediction time. The time points for
 longitudinal repeated measurements must not surpass the prediction time.
+}
+\details{
+There is no universal correct value for \code{bandcount2}/\code{bandcount3}:
+as a practical check, double both and confirm the results barely change;
+if they do, keep doubling. By default (\code{bandcount2 = "auto"},
+\code{bandcount3 = "auto"}), this doubling check is done for you:
+starting from small built-in values, both are doubled together, and the
+result is compared to the previous round, until the largest relative
+change in \code{Y_predict} drops below 1\%, or 2 doublings have been
+tried (so at most 3 calls' worth of work). If it still has not converged
+by then, a warning reports this and the result at the largest value
+tried is returned anyway (not an error), so this never silently loops
+for an unbounded amount of time. Pass an explicit number for either
+argument to skip auto-tuning it and use a fixed value instead (as in
+previous package versions), or call \code{checkBandcountConvergence()}
+directly for more control over the tolerance and doubling count. See
+also \code{vignette("BJM-intro", package = "BJM")} for a worked example.
 }
 \examples{
 
 \donttest{
 data(pbc3)
 
-data.survival.fitting =  pbc3[!duplicated(pbc3$id), ]
+data_survival_fitting =  pbc3[!duplicated(pbc3$id), ]
 
-formMarginalSurv = Surv(years, status3) ~ age + sex
-formConditionalCR = NULL
+form_marginal_surv = Surv(years, status3) ~ age + sex
+form_conditional_cr = NULL
 
-survival_fit_all = survivalSub(data.survival.fitting, formMarginalSurv, 
-                               formConditionalCR)
+survival_fit_all = survivalSub(data_survival_fitting, form_marginal_surv, 
+                               form_conditional_cr)
 
-LongSubFixed = list(
+long_sub_fixed = list(
   "long1" = serBilir ~ year + age + sex +  (years) + (years) * year,  
   "long2" = prothrombin ~ year + age + sex + (years) + (years) * year,  
   "long3" = albumin ~ year + age + age * year + sex + (years) + (years) * year,  
@@ -87,7 +121,7 @@ LongSubFixed = list(
   "long5" = SGOT ~ year + age + sex + (years) + (years) * year, 
   "long6" = platelets ~ year + age + sex + (years)  + (years) * year)
 
-LongSubRandom =list(
+long_sub_random =list(
   "long1" =  ~ year| id,   
   "long2" =  ~ year| id,    
   "long3" =  ~ year| id,    
@@ -95,11 +129,11 @@ LongSubRandom =list(
   "long5" =  ~ year| id,    
   "long6" =  ~ year| id)
 
-survivalVariableAll = list(
+survival_variable_all = list(
   "Tyears1",  "Tyears2", "Tyears3", "Tyears4"
 )
 
-survivalTransFunction = list(
+survival_trans_function = list(
   fun1 = function(x){abs(x - 1)}, 
   fun2 = function(x){abs(x - 3)}, 
   fun3 = function(x){abs(x - 5)}, 
@@ -107,26 +141,26 @@ survivalTransFunction = list(
 )
 
 # Complete case analysis
-data.fit.all = list()
-for(i in 1:length(LongSubFixed)){
-  data.fit.all[[i]] = pbc3[pbc3$status3 == 1, ]
+data_fit_all = list()
+for(i in seq_len(length(long_sub_fixed))){
+  data_fit_all[[i]] = pbc3[pbc3$status3 == 1, ]
 }
 
 # fitting longitudinal submodel
-long_fit_all = longitudinalSub(data.fit.all, LongSubFixed, LongSubRandom)
+long_fit_all = longitudinalSub(data_fit_all, long_sub_fixed, long_sub_random)
 
 i_PID = 2
 data.raw.predict.1 = pbc3[pbc3$id == i_PID, ]
 
-data.predict.all = list()
-for(i in 1:length(LongSubFixed)){
-  data.predict.all[[i]] = data.raw.predict.1[data.raw.predict.1$year <= 3,]
+data_predict_all = list()
+for(i in seq_len(length(long_sub_fixed))){
+  data_predict_all[[i]] = data.raw.predict.1[data.raw.predict.1$year <= 3,]
 }
 
-Y_predict = dynamicPredictionBio(bio_i = 1, data.predict.all, long_fit_all, 
-                                 survival_fit_all, prediction.time = 3, 
+Y_predict = dynamicPredictionBio(bio_i = 1, data_predict_all, long_fit_all, 
+                                 survival_fit_all, prediction_time = 3, 
                                  horizon = 3, time_variable = "year",
-                                 survivalVariableAll, survivalTransFunction,
+                                 survival_variable_all, survival_trans_function,
                                  bandcount2 = 40, bandcount3 = 400)
 
 }

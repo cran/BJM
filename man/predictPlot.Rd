@@ -5,32 +5,35 @@
 \title{Plot of risk and future biomarker with density using dynamic prediction}
 \usage{
 predictPlot(
-  data.predict.all.one,
+  data_predict_all_one,
   long_fit_all,
   survival_fit_all,
-  prediction.time = 4,
+  prediction_time = 4,
   horizon = seq(0, 3, 0.5),
   time_variable,
-  survivalVariableAll,
-  survivalTransFunction,
-  bandcount1 = 10,
-  bandcount2 = 10,
-  bandcount3 = 200,
+  survival_variable_all,
+  survival_trans_function,
+  bandcount1 = "auto",
+  bandcount2 = "auto",
+  bandcount3 = "auto",
   bio_his = 1,
   bio_pred = 1,
-  density = 1
+  density = 1,
+  n_cores = 1
 )
 }
 \arguments{
-\item{data.predict.all.one}{This involves a collection of \code{data.frame} one object for
+\item{data_predict_all_one}{This involves a collection of \code{data.frame} one object for
 dynamic prediction and making plots, each corresponding to a distinct longitudinal outcome.
-These data frames should contain the variables specified in \code{LongSubFixed}
-and \code{LongSubRandom}. Utilizing a list structure
+These data frames should contain the variables specified in \code{long_sub_fixed}
+and \code{long_sub_random}. Utilizing a list structure
 allows for the incorporation of multiple longitudinal outcomes,
 each potentially following different measurement protocols.
 In instances where all longitudinal outcomes are recorded at identical
 time points across patients, a singular \code{data.frame} object may
-be used in a \code{list}. It is presumed that each data frame is
+be used in a \code{list}. Alternatively, a single bare \code{data.frame}
+(not wrapped in a list) may be supplied directly; it is then reused for
+every longitudinal outcome. It is presumed that each data frame is
 structured in a long format.}
 
 \item{long_fit_all}{Outputs from the model fitting process using the \code{nlme} package,
@@ -40,30 +43,64 @@ encompassing the results and parameters obtained from the analysis.}
 procedure, utilizing the \code{coxph} function. These outputs include the comprehensive
 findings and variables derived from the analysis.}
 
-\item{prediction.time}{Time used to make the prediction.}
+\item{prediction_time}{Time used to make the prediction.}
 
 \item{horizon}{Prediction horizon.}
 
 \item{time_variable}{The name of time variable in linear mixed model.}
 
-\item{survivalVariableAll}{The name of the transformed time-to-event outcomes variable.}
+\item{survival_variable_all}{The name of the transformed time-to-event outcomes variable.}
 
-\item{survivalTransFunction}{The transformation function used for time-to-event outcomes,
-in the order of \code{survivalVariableAll}.}
+\item{survival_trans_function}{The transformation function used for time-to-event outcomes,
+in the order of \code{survival_variable_all}.}
 
-\item{bandcount1}{The number of points used to perform the numerical integral,
-from the prediction time to the prediction time plus the horizon.}
+\item{bandcount1}{The number of grid points spanning the prediction window,
+from \code{prediction_time} to \code{prediction_time + horizon}. Larger
+values give a more accurate but slower estimate. Defaults to \code{"auto"},
+which resolves it once, before looping over \code{horizon} (using the
+largest requested horizon as a representative probe), by doubling from a
+built-in starting value until the predicted risk stabilizes; see
+\code{\link{dynamicPrediction}}'s \code{bandcount1} for details of that
+search. The resolved value is then reused, fixed, for every point in
+\code{horizon} -- it is not re-searched on every iteration.}
 
-\item{bandcount2}{The number of points used to perform the numerical integral,
-from the prediction time to infinity.}
+\item{bandcount2}{The number of grid points used to approximate
+integrating out to infinity when normalizing the predicted risk/density.
+A wider follow-up range needs a larger \code{bandcount2} to keep the
+grid spacing comparable. Defaults to \code{"auto"}; resolved the same way
+as \code{bandcount1} (jointly with it, when both are \code{"auto"}).}
 
-\item{bandcount3}{The number of points used to calculate the probability density function.}
+\item{bandcount3}{The number of points in the candidate-biomarker-value
+grid used to build the predicted density curve; controls the resolution
+of the density, not a time integral. Defaults to \code{"auto"}; resolved
+the same way, but only when \code{bio_pred} is non-\code{NULL} (it is
+unused otherwise).
+
+Pass explicit numbers instead of \code{"auto"} for full manual control, or
+use \code{checkBandcountConvergence()} (applied to \code{dynamicPrediction()}/
+\code{dynamicPredictionBio()} directly) to inspect the convergence behavior
+yourself. See also \code{vignette("BJM-intro", package = "BJM")} for
+further guidance on choosing \code{bandcount1}/\code{bandcount2}/
+\code{bandcount3}.}
 
 \item{bio_his}{Which biomarker history will be plotted}
 
 \item{bio_pred}{Indicator, predict future biomarker or not, if NULL do not predict}
 
 \item{density}{Indicator, plot future biomarker density or not, if NULL do not plot}
+
+\item{n_cores}{Number of CPU cores to use for computing the prediction at
+each point in \code{horizon}. Each point is computed independently, so
+this loop can be dispatched across cores. Defaults to \code{1} (serial
+execution; identical behavior/output to versions of this function without
+this argument). Values greater than \code{1} use \code{parallel::mclapply()},
+which relies on forking and is therefore only actually parallel on
+Unix-like systems (Linux, macOS); on Windows, \code{mclapply()} silently
+runs the iterations serially regardless of \code{n_cores} (a limitation of
+R's fork-based parallelism, not of this package). Parallel execution
+produces exactly the same numeric result as serial execution -- only the
+order in which iterations are computed (not the order results are
+assembled in) changes.}
 }
 \value{
 Plot of risk and future biomarker with density using dynamic prediction.
@@ -75,15 +112,15 @@ This function gives the risk and biomarker prediction plot.
 \donttest{
 data(pbc3)
 
-data.survival.fitting =  pbc3[!duplicated(pbc3$id), ]
+data_survival_fitting =  pbc3[!duplicated(pbc3$id), ]
 
-formMarginalSurv = Surv(years, status3) ~ age + sex
-formConditionalCR = NULL
+form_marginal_surv = Surv(years, status3) ~ age + sex
+form_conditional_cr = NULL
 
-survival_fit_all = survivalSub(data.survival.fitting, formMarginalSurv, 
-                               formConditionalCR)
+survival_fit_all = survivalSub(data_survival_fitting, form_marginal_surv, 
+                               form_conditional_cr)
 
-LongSubFixed = list(
+long_sub_fixed = list(
   "long1" = serBilir ~ year + age + sex +  (years) + (years) * year,  
   "long2" = prothrombin ~ year + age + sex + (years) + (years) * year,  
   "long3" = albumin ~ year + age + age * year + sex + (years) + (years) * year,  
@@ -91,7 +128,7 @@ LongSubFixed = list(
   "long5" = SGOT ~ year + age + sex + (years) + (years) * year, 
   "long6" = platelets ~ year + age + sex + (years)  + (years) * year)
 
-LongSubRandom =list(
+long_sub_random =list(
   "long1" =  ~ year| id,   
   "long2" =  ~ year| id,    
   "long3" =  ~ year| id,    
@@ -99,11 +136,11 @@ LongSubRandom =list(
   "long5" =  ~ year| id,    
   "long6" =  ~ year| id)
 
-survivalVariableAll = list(
+survival_variable_all = list(
   "Tyears1",  "Tyears2", "Tyears3", "Tyears4"
 )
 
-survivalTransFunction = list(
+survival_trans_function = list(
   fun1 = function(x){abs(x - 1)}, 
   fun2 = function(x){abs(x - 3)}, 
   fun3 = function(x){abs(x - 5)}, 
@@ -111,25 +148,25 @@ survivalTransFunction = list(
 )
 
 # Complete case analysis
-data.fit.all = list()
-for(i in 1:length(LongSubFixed)){
-  data.fit.all[[i]] = pbc3[pbc3$status3 == 1, ]
+data_fit_all = list()
+for(i in seq_len(length(long_sub_fixed))){
+  data_fit_all[[i]] = pbc3[pbc3$status3 == 1, ]
 }
 
 # fitting longitudinal submodel
-long_fit_all = longitudinalSub(data.fit.all, LongSubFixed, LongSubRandom)
+long_fit_all = longitudinalSub(data_fit_all, long_sub_fixed, long_sub_random)
 
 i_PID = 2
 data.raw.predict.plot = pbc3[pbc3$id == i_PID, ]
-data.predict.all.pre = list(data.raw.predict.plot, data.raw.predict.plot, data.raw.predict.plot,
+data_predict_all_one = list(data.raw.predict.plot, data.raw.predict.plot, data.raw.predict.plot,
                             data.raw.predict.plot, data.raw.predict.plot, data.raw.predict.plot)
 
 # plot biomarker 1 history,  predict future biomarker
 
-predictPlot(data.predict.all.pre, long_fit_all, survival_fit_all, 
-            prediction.time = 5, bio_his = 1, bio_pred = 1,
+predictPlot(data_predict_all_one, long_fit_all, survival_fit_all,
+            prediction_time = 5, bio_his = 1, bio_pred = 1,
             horizon = seq(0.5, 3.0, 0.5), time_variable = "year",
-            survivalVariableAll, survivalTransFunction,
+            survival_variable_all, survival_trans_function,
            bandcount1 = 10, bandcount2 = 10, bandcount3 = 200)
        
 }

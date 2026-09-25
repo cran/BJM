@@ -5,21 +5,31 @@
 \title{Plot of risk using dynamic prediction}
 \usage{
 riskPlot(
-  data.predict.all.pre,
+  data_predict_all_pre,
   long_fit_all,
   survival_fit_all,
-  prediction.time = NULL,
+  prediction_time = NULL,
   bio_i = NULL,
   horizon,
   time_variable,
-  survivalVariableAll,
-  survivalTransFunction,
-  bandcount1 = 10,
-  bandcount2 = 10
+  survival_variable_all,
+  survival_trans_function,
+  bandcount1 = "auto",
+  bandcount2 = "auto",
+  n_cores = 1
 )
 }
 \arguments{
-\item{data.predict.all.pre}{This involves a collection of \code{data.frame} objects for}
+\item{data_predict_all_pre}{This involves a collection of \code{data.frame} objects for
+dynamic prediction, each corresponding to a distinct longitudinal outcome. These data
+frames should contain the variables specified in \code{long_sub_fixed} and
+\code{long_sub_random}. Utilizing a list structure allows for the incorporation of
+multiple longitudinal outcomes, each potentially following different measurement
+protocols. In instances where all longitudinal outcomes are recorded at identical time
+points across patients, a singular \code{data.frame} object may be used in a \code{list}.
+Alternatively, a single bare \code{data.frame} (not wrapped in a list) may be supplied
+directly; it is then reused for every longitudinal outcome. It is presumed that each
+data frame is structured in a long format.}
 
 \item{long_fit_all}{Outputs from the model fitting process using the \code{nlme} package,
 encompassing the results and parameters obtained from the analysis.}
@@ -28,7 +38,7 @@ encompassing the results and parameters obtained from the analysis.}
 procedure, utilizing the \code{coxph} function. These outputs include the comprehensive
 findings and variables derived from the analysis.}
 
-\item{prediction.time}{Time used to make the prediction.}
+\item{prediction_time}{Time used to make the prediction.}
 
 \item{bio_i}{Biomarker used to do prediction.}
 
@@ -36,16 +46,45 @@ findings and variables derived from the analysis.}
 
 \item{time_variable}{The name of time variable in linear mixed model.}
 
-\item{survivalVariableAll}{The name of the transformed time-to-event outcomes variable.}
+\item{survival_variable_all}{The name of the transformed time-to-event outcomes variable.}
 
-\item{survivalTransFunction}{The transformation function used for time-to-event outcomes,
-in the order of \code{survivalVariableAll}.}
+\item{survival_trans_function}{The transformation function used for time-to-event outcomes,
+in the order of \code{survival_variable_all}.}
 
-\item{bandcount1}{The number of points used to perform the numerical integral,
-from the prediction time to the prediction time plus the horizon.}
+\item{bandcount1}{The number of grid points spanning the prediction window,
+from \code{prediction_time} to \code{prediction_time + horizon}. Larger
+values give a more accurate but slower estimate. Defaults to \code{"auto"},
+which resolves it once, before looping over the landmark times, (using
+the first landmark time as a representative probe) by doubling from a
+built-in starting value until the predicted risk stabilizes; see
+\code{\link{dynamicPrediction}}'s \code{bandcount1} for details of that
+search. The resolved value is then reused, fixed, for every landmark
+time -- it is not re-searched on every iteration.}
 
-\item{bandcount2}{The number of points used to perform the numerical integral,
-from the prediction time to infinity.}
+\item{bandcount2}{The number of grid points used to approximate
+integrating out to infinity when normalizing the predicted risk. A wider
+follow-up range needs a larger \code{bandcount2} to keep the grid
+spacing comparable. Defaults to \code{"auto"}; resolved the same way as
+\code{bandcount1} (jointly with it, when both are \code{"auto"}).
+
+Pass explicit numbers instead of \code{"auto"} for full manual control, or
+use \code{checkBandcountConvergence()} (applied to \code{dynamicPrediction()}
+directly) to inspect the convergence behavior yourself. See also
+\code{vignette("BJM-intro", package = "BJM")} for further guidance on
+choosing \code{bandcount1}/\code{bandcount2}.}
+
+\item{n_cores}{Number of CPU cores to use for computing the prediction at
+each landmark time in \code{prediction_time}. Each landmark time is
+computed independently, so this loop can be dispatched across cores.
+Defaults to \code{1} (serial execution; identical behavior/output to
+versions of this function without this argument). Values greater than
+\code{1} use \code{parallel::mclapply()}, which relies on forking and is
+therefore only actually parallel on Unix-like systems (Linux, macOS); on
+Windows, \code{mclapply()} silently runs the iterations serially
+regardless of \code{n_cores} (a limitation of R's fork-based parallelism,
+not of this package). Parallel execution produces exactly the same
+numeric result as serial execution -- only the order in which iterations
+are computed (not the order results are assembled in) changes.}
 }
 \value{
 Plot of risk using dynamic prediction.
