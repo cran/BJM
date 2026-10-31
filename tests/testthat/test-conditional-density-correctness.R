@@ -1,0 +1,191 @@
+# Independent numeric ground-truth check for the joint Y|T (and Y|D,T)
+# conditional density computed by conditionalYT()/conditionalYDT().
+#
+# Neither function previously had a test that verified its output against an
+# INDEPENDENT reference -- the only numeric checks were golden-master
+# snapshots of the package's own prior output (test-baseline-characterization
+# (-noCR).R), which cannot catch a bug that was already present when the
+# snapshot was captured.
+#
+# This matters because conditionalYT()/conditionalYDT() used to compute the
+# joint (across all M jointly-fit biomarkers) Gaussian quadratic form
+# (Y - mu)' Sigma_all_solve (Y - mu) via a "trace trick": reducing it to
+# sum(diag(...)) of an M x M matrix built from parameter_matrix/
+# longitudinal_all_matrix sandwiched through Sigma_all_solve. That trace only
+# sums the *diagonal* (i == j) blocks of the reduced matrix, silently
+# dropping every cross-marker (i != j) contribution of Sigma_all_solve --
+# i.e. it implicitly treated the biomarkers as conditionally independent
+# given the random effects, even though Sigma_fit (the fitted joint
+# random-effects covariance) is generally NOT block-diagonal across markers.
+# Since Sigma_all is built from Sigma_fit precisely to capture that
+# cross-marker correlation, the bug silently threw away real information
+# whenever two or more jointly-fit biomarkers had correlated random effects
+# -- the ordinary case for a joint model, not an edge case.
+#
+# These tests independently recompute the same density via
+# mvtnorm::dmvnorm() on the full stacked mean/covariance (rather than via
+# conditionalYT.R/conditionalYDT.R's own internal matrix algebra), for a
+# patient/fit where the fitted Sigma_fit has genuinely nonzero cross-marker
+# blocks -- confirming the fix, and guarding against this class of bug
+# recurring.
+
+build_two_marker_fit <- function() {
+  data(pbc3, envir = environment())
+
+  long_sub_fixed <- list(
+    "long1" = serBilir ~ year + age + sex + years,
+    "long2" = albumin ~ year + age + sex + years
+  )
+  long_sub_random <- list("long1" = ~ year | id, "long2" = ~ year | id)
+  data_fit_all <- list(pbc3[pbc3$status3 == 1, ], pbc3[pbc3$status3 == 1, ])
+  long_fit_all <- longitudinalSub(data_fit_all, long_sub_fixed, long_sub_random)
+
+  list(pbc3 = pbc3, long_fit_all = long_fit_all)
+}
+
+# Independently recomputes the stacked-vector Gaussian density that
+# conditionalYT()/conditionalYDT() are supposed to compute for one patient
+# at one l_i grid point, evaluated at a given value of any extra covariates
+# (e.g. event_type_variable for the competing-risk path) already baked into
+# `data_num_i_list`.
+# The patient's stacked covariance Z D Z' + diag(sigma_k^2), built here
+# directly rather than taken from the package, which factors it without
+# forming it (cov_factor()).
+reference_sigma_all <- function(long_fit_all, data_num_i_list) {
+  A <- random_effects_design(data_num_i_list, long_fit_all$long_sub_random, long_fit_all$Sigma_fit)
+  r_diag <- unlist(lapply(seq_along(data_num_i_list), function(i) {
+    rep(long_fit_all$lfit[[i]]$sigma^2, nrow(data_num_i_list[[i]]))
+  }))
+  A %*% long_fit_all$Sigma_fit %*% t(A) + diag(r_diag, length(r_diag))
+}
+
+dmvnorm_reference <- function(long_fit_all, data_num_i_list, Sigma_all, l_i_value, survival_variable) {
+  lfit <- long_fit_all$lfit
+  n_longitudinal <- length(lfit)
+
+  mu_parts <- list()
+  y_parts <- list()
+  for (i in seq_len(n_longitudinal)) {
+    d_i <- data_num_i_list[[i]]
+    d_i[[survival_variable]] <- l_i_value
+    terms_model <- lfit[[i]]$terms
+    xlev_i <- if (!is.null(long_fit_all$xlevels)) long_fit_all$xlevels[[i]] else NULL
+    mf_i <- model.frame(terms_model, d_i, xlev = xlev_i)
+    X_i <- model.matrix(terms_model, mf_i, contrasts.arg = lfit[[i]]$contrasts)
+    mu_parts[[i]] <- as.numeric(X_i %*% lfit[[i]]$coefficients$fixed)
+    y_parts[[i]] <- as.numeric(d_i[[as.character(formula(lfit[[i]]))[2]]])
+  }
+  mvtnorm::dmvnorm(unlist(y_parts), mean = unlist(mu_parts), sigma = Sigma_all)
+}
+
+test_that("conditionalYT matches an independent mvtnorm::dmvnorm ground truth for correlated markers", {
+  fx <- build_two_marker_fit()
+  long_fit_all <- fx$long_fit_all
+
+  # sanity: the fitted joint random-effects covariance actually has nonzero
+  # cross-marker blocks for this fixture -- otherwise this test wouldn't
+  # exercise the bug at all (any quadratic-form implementation would agree
+  # when Sigma_fit is block-diagonal, per the toy check in the PR).
+  expect_true(any(abs(long_fit_all$Sigma_fit[1:2, 3:4]) > 1e-6))
+
+  num_i <- 2
+  data_predict_all <- list(fx$pbc3[fx$pbc3$id == num_i, ], fx$pbc3[fx$pbc3$id == num_i, ])
+  l_i <- c(6, 7)
+
+  out <- conditionalYT(data_predict_all, long_fit_all, l_i, survival_variable = "years",
+                        time_variable = "year", survival_variable_all = list(),
+                        survival_trans_function = list())
+
+  n_longitudinal <- length(long_fit_all$lfit)
+  patient_data <- select_patient_longitudinal_data(data_predict_all, "id", num_i, n_longitudinal, "year")
+  Sigma_all <- reference_sigma_all(long_fit_all, patient_data$data_num_i_list)
+
+  for (it in seq_along(l_i)) {
+    ref <- dmvnorm_reference(long_fit_all, patient_data$data_num_i_list, Sigma_all,
+                              l_i[it], "years")
+    # conditionalYT() returns an unnamed list (return(f_Y_T_D = list(...))
+    # discards the argument name since return() takes a single value), so
+    # the (log) density matrix is out[[1]], not out$f_Y_T_D.
+    expect_equal(exp(out[[1]][it, 1]), ref, tolerance = 1e-8)
+  }
+})
+
+test_that("conditionalYDT matches an independent mvtnorm::dmvnorm ground truth for correlated markers", {
+  fx <- build_two_marker_fit()
+  long_fit_all <- fx$long_fit_all
+  pbc3 <- fx$pbc3
+
+  data_survival_fitting <- pbc3[!duplicated(pbc3$id), ]
+  survival_fit_all <- survivalSub(data_survival_fitting,
+                                   Surv(years, status3) ~ age + sex,
+                                   status4 ~ years + age + sex)
+
+  num_i <- 2
+  data_predict_all <- list(pbc3[pbc3$id == num_i, ], pbc3[pbc3$id == num_i, ])
+  l_i <- c(6, 7)
+
+  out <- conditionalYDT(data_predict_all, long_fit_all, survival_fit_all, l_i,
+                         survival_variable = "years", time_variable = "year",
+                         survival_variable_all = list(), survival_trans_function = list())
+
+  n_longitudinal <- length(long_fit_all$lfit)
+  event_type_variable <- as.character(formula(survival_fit_all$form_conditional_cr)[[2]])
+  patient_data <- select_patient_longitudinal_data(data_predict_all, "id", num_i, n_longitudinal, "year")
+  Sigma_all <- reference_sigma_all(long_fit_all, patient_data$data_num_i_list)
+
+  for (it in seq_along(l_i)) {
+    data_num_i_list_1 <- lapply(patient_data$data_num_i_list, function(d) {
+      d[[event_type_variable]] <- 1
+      d
+    })
+    data_num_i_list_0 <- lapply(patient_data$data_num_i_list, function(d) {
+      d[[event_type_variable]] <- 0
+      d
+    })
+    ref1 <- dmvnorm_reference(long_fit_all, data_num_i_list_1, Sigma_all, l_i[it], "years")
+    ref0 <- dmvnorm_reference(long_fit_all, data_num_i_list_0, Sigma_all, l_i[it], "years")
+
+    # conditionalYDT() returns an unnamed list(f_Y_T_D_w0, f_Y_T_D_w1) (see
+    # note above on return()'s argument name being discarded).
+    expect_equal(exp(out[[2]][it, 1]), ref1, tolerance = 1e-8)
+    expect_equal(exp(out[[1]][it, 1]), ref0, tolerance = 1e-8)
+  }
+})
+
+test_that("conditionalYDT/conditionalYDTBio re-evaluate transformed survival-time terms at every grid point", {
+  data(pbc3, envir = environment())
+  data_fit <- pbc3[pbc3$status3 == 1, ]
+  # The event type is not in these formulas, so Y | D, T does not depend
+  # on D and both of conditionalYDT()'s densities must equal
+  # conditionalYT()'s, which rebuilds its model frame at every grid point.
+  long_fit_all <- longitudinalSub(
+    list(data_fit, data_fit),
+    list(serBilir ~ year + age + sex + log(years),
+         albumin ~ year + age + sex + I(years^2) + years),
+    list(~ year | id, ~ year | id))
+  survival_fit_all <- survivalSub(pbc3[!duplicated(pbc3$id), ],
+                                  Surv(years, status3) ~ age + sex,
+                                  status4 ~ years + age + sex)
+  d <- pbc3[pbc3$id %in% c(2, 9) & pbc3$year <= 5, ]
+  data_predict_all <- list(d, d)
+  l_i <- c(6, 9, 12)
+
+  ydt <- conditionalYDT(data_predict_all, long_fit_all, survival_fit_all, l_i,
+                        "years", "year", list(), list())
+  yt <- conditionalYT(data_predict_all, long_fit_all, l_i, "years", "year", list(), list())
+  expect_equal(ydt[[1]], yt[[1]])
+  expect_equal(ydt[[2]], yt[[1]])
+
+  # The same for the biomarker-prediction numerator: a grid point's value
+  # must not depend on which grid point came first.
+  y_all <- c(0.5, 1)
+  bio_grid <- conditionalYDTBio(y_all, 6, 1, data_predict_all, long_fit_all, survival_fit_all,
+                                l_i, "years", "year", list(), list())
+  bio_last <- conditionalYDTBio(y_all, 6, 1, data_predict_all, long_fit_all, survival_fit_all,
+                                l_i[3], "years", "year", list(), list())
+  for (k in 1:2) {
+    for (y in seq_along(y_all)) {
+      expect_equal(bio_grid[[k]][[y]][3, ], bio_last[[k]][[y]][1, ])
+    }
+  }
+})

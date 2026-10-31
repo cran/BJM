@@ -1,8 +1,8 @@
 ---
-title: "Getting Started with BJM"
+title: "Getting started with BJM"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{Getting Started with BJM}
+  %\VignetteIndexEntry{Getting started with BJM}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
@@ -28,10 +28,10 @@ Fitting and prediction is a four-step pipeline:
    competing-risks sub-model).
 2. `longitudinalSub()` fits the longitudinal sub-model(s), one per
    biomarker.
-3. `dynamicPrediction()` combines the two fits to predict a patient's event
+3. `predictRisk()` combines the two fits to predict a patient's event
    risk over a future horizon.
-4. `dynamicPredictionBio()` additionally predicts a future value of one
-   specific biomarker.
+4. `predictLongitudinal()` additionally predicts a future value of one or
+   more specific biomarkers.
 
 This vignette walks through all four steps on the `pbc3` data set that
 ships with the package, then covers two practical questions that come up
@@ -96,7 +96,18 @@ long_fit_all <- longitudinalSub(data_fit_all, long_sub_fixed, long_sub_random)
 long_fit_all
 ```
 
-## Step 3: Predict event risk with `dynamicPrediction()`
+## Missing biomarker values
+
+`longitudinalSub()` fits each biomarker's mixed model on every visit at
+which that biomarker was measured, which is already valid when values are
+missing at random, so incomplete follow-up usually needs no special
+treatment. `imputeLongitudinal()` can fill in missing biomarker values
+first, which helps mainly when many patients never had some biomarker
+measured; see the
+[Missing data imputation](https://wenhaoli18.github.io/BJM/articles/missing-data-imputation.html)
+article on the package website.
+
+## Step 3: Predict event risk with `predictRisk()`
 
 To predict for a specific patient, build a `data_predict_all` list (one
 `data.frame` per biomarker, mirroring `data_fit_all`) containing only that
@@ -106,7 +117,7 @@ for patient 2, the risk of each event type within one year of `year = 5`.
 
 `survival_variable_all`/`survival_trans_function` describe how the raw
 event-time variable is transformed for the integration grid; see
-`?dynamicPrediction` for details.
+`?predictRisk` for details.
 
 ```{r dynamic-prediction}
 survival_variable_all <- list("Tyears1", "Tyears2", "Tyears3", "Tyears4")
@@ -117,10 +128,10 @@ survival_trans_function <- list(
   fun4 = function(x) abs(x - 7)
 )
 
-data_raw_predict <- pbc3[pbc3$id == 2, ]
+data_raw_predict <- pbc3[pbc3$id == 2 & pbc3$year <= 5, ]
 data_predict_all <- list(data_raw_predict, data_raw_predict)
 
-risk <- dynamicPrediction(
+risk <- predictRisk(
   data_predict_all, long_fit_all, survival_fit_all,
   prediction_time = 5, horizon = 1, time_variable = "year",
   survival_variable_all, survival_trans_function,
@@ -148,15 +159,19 @@ horizon, conditional on the patient's longitudinal history and survival to
 `prediction_time`. (`risk_prob_2` is `NULL` whenever `survival_fit_all` was
 fit without `form_conditional_cr`.)
 
-## Step 4: Predict a future biomarker value with `dynamicPredictionBio()`
+## Step 4: Predict a future biomarker value with `predictLongitudinal()`
 
-`dynamicPredictionBio()` answers a different question: not *whether* an
+`predictLongitudinal()` answers a different question: not *whether* an
 event happens, but what a specific biomarker's value is likely to be at
-`prediction_time + horizon`, conditional on survival. `bio_i` selects the
-biomarker by its position in `long_fit_all` (`1` = `serBilir` here).
+`prediction_time + horizon`, conditional on survival to that time. `bio_i` selects the
+biomarker(s) by position in `long_fit_all` (`1` = `serBilir` here); naming
+exactly one biomarker returns a single result, while naming more than one
+(or leaving `bio_i = NULL` for every biomarker) returns a named list of
+results instead, computing the shared, bio_i-independent part of the
+pipeline only once and reusing it across every biomarker.
 
 ```{r dynamic-prediction-bio}
-bio_pred <- dynamicPredictionBio(
+bio_pred <- predictLongitudinal(
   bio_i = 1, data_predict_all, long_fit_all, survival_fit_all,
   prediction_time = 5, horizon = 1, time_variable = "year",
   survival_variable_all, survival_trans_function,
@@ -172,21 +187,22 @@ what `predictPlot()` visualizes (see `?predictPlot`).
 
 ## Choosing `bandcount1`, `bandcount2`, `bandcount3`
 
-`dynamicPrediction()` and `dynamicPredictionBio()` estimate their outputs
+`predictRisk()` and `predictLongitudinal()` estimate their outputs
 by numerical integration over patient-specific time and biomarker grids.
 The `bandcount*` arguments control how fine those grids are:
 
-- **`bandcount1`** (`dynamicPrediction()` only) is the number of grid
+- **`bandcount1`** (`predictRisk()` only) is the number of grid
   points spanning the prediction window itself, from `prediction_time` to
   `prediction_time + horizon`. This is the numerator of the risk
   probability.
-- **`bandcount2`** is the number of grid points spanning
-  `[prediction_time, upper_bound]`, where `upper_bound` is set internally
-  to twice the longest observed survival/censoring time among at-risk
-  patients. This approximates "integrating out to infinity" for the
-  denominator that normalizes the risk probability. A wider follow-up
-  range needs a larger `bandcount2` to keep the grid spacing comparable.
-- **`bandcount3`** (`dynamicPredictionBio()` only) is the number of points
+- **`bandcount2`** is the number of grid points spanning the time after
+  the prediction window, up to an `upper_bound` set internally to where
+  every at-risk patient's model-based probability of still being
+  event-free has become negligible. This approximates "integrating out to
+  infinity" for the denominator that normalizes the risk probability. A
+  wider follow-up range needs a larger `bandcount2` to keep the grid
+  spacing comparable.
+- **`bandcount3`** (`predictLongitudinal()` only) is the number of points
   in the candidate-biomarker-value grid (`Y_all`) used to build the
   predicted density and locate its mode (`Y_predict`). It controls the
   resolution of the density curve, not a time integral.
@@ -199,14 +215,14 @@ the length of follow-up in your data — so the practical approach is a
 every `bandcount*` doubled, and confirm the results barely move.
 
 ```{r bandcount-convergence}
-risk_default <- dynamicPrediction(
+risk_default <- predictRisk(
   data_predict_all, long_fit_all, survival_fit_all,
   prediction_time = 5, horizon = 1, time_variable = "year",
   survival_variable_all, survival_trans_function,
   bandcount1 = 10, bandcount2 = 20
 )
 
-risk_doubled <- dynamicPrediction(
+risk_doubled <- predictRisk(
   data_predict_all, long_fit_all, survival_fit_all,
   prediction_time = 5, horizon = 1, time_variable = "year",
   survival_variable_all, survival_trans_function,
@@ -220,7 +236,7 @@ abs(risk_default$risk_prob_2 - risk_doubled$risk_prob_2)
 If doubling the `bandcount*` values changes the result by more than you can
 tolerate, keep doubling until it doesn't; if it barely changes anything (as
 above), the smaller, cheaper value is fine to use. The same check applies
-to `bandcount3` for `dynamicPredictionBio()`.
+to `bandcount3` for `predictLongitudinal()`.
 
 ## Friendly error messages
 
@@ -228,10 +244,10 @@ The pipeline functions validate their arguments before doing any model
 fitting or numerical integration, so common mistakes fail fast with a
 message that names the offending argument — instead of a cryptic error
 from deep inside `model.matrix()` or list indexing. For example, passing a
-single `data.frame` instead of a list to `dynamicPrediction()`:
+single `data.frame` instead of a list to `predictRisk()`:
 
 ```{r validation-example, error = TRUE}
-dynamicPrediction(
+predictRisk(
   data_predict_all[[1]], long_fit_all, survival_fit_all,
   prediction_time = 5, horizon = 1, time_variable = "year",
   survival_variable_all, survival_trans_function,
@@ -247,8 +263,21 @@ longitudinalSub(pbc3, serBilir ~ year + not_a_column, ~ year | id)
 
 ## Where to go next
 
+- The articles on the [package website](https://wenhaoli18.github.io/BJM/)
+  cover competing risks, plotting, categorical (ordinal or binary)
+  biomarkers, missing data imputation, interval-censored and recurrent
+  events, and simulated futures in more depth.
 - `?predictPlot` and `?riskPlot` visualize the outputs of
-  `dynamicPredictionBio()`/`dynamicPrediction()` for a single patient.
+  `predictLongitudinal()`/`predictRisk()` for a single patient.
 - `?cmtPlot` plots observed longitudinal trajectories stratified by
   eventual outcome, useful for checking whether a biomarker looks
   informative before fitting.
+- `?spaghettiPlot` draws each subject's observed trajectory, optionally
+  aligned at the event time, and `?cifPlot` plots the cumulative
+  incidence of each (competing) event type.
+- `?performancePlot` evaluates the risk predictions (time-dependent AUC
+  and Brier score) across landmark times, ideally on held-out data, and
+  `?calibrationPlot` compares the predicted with the observed risks.
+- `?imputeLongitudinal` and `?poolLongitudinalSub` impute missing
+  biomarker values and pool the fits to several completions (see "Missing
+  biomarker values" above).

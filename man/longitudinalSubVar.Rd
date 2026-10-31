@@ -5,10 +5,12 @@
 \title{Variance-covariance matrix
 Reference: package "lmm" and package "joineRML" function \code{mvlme}.}
 \usage{
-longitudinalSubVar(thetaLong, l, tol.em, verbose)
+longitudinalSubVar(thetaLong, l, tol.em, verbose, max.iter = 1000)
 }
 \description{
-Variance-covariance matrix
-Reference: package "lmm" and package "joineRML" function \code{mvlme}.
+The EM is accelerated by SQUAREM (Varadhan and Roland, 2008), and stops
+once the relative change in \code{D} over an accelerated cycle (three EM
+updates) is at most \code{tol.em}, or after \code{max.iter} EM updates
+with a warning.
 }
 \keyword{internal}

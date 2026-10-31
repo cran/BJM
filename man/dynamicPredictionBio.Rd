@@ -2,7 +2,8 @@
 % Please edit documentation in R/dynamicPredictionBio.R
 \name{dynamicPredictionBio}
 \alias{dynamicPredictionBio}
-\title{Dynamic prediction function for future biomarker}
+\title{Predict a future biomarker value from fitted sub-models, for a single
+biomarker}
 \usage{
 dynamicPredictionBio(
   bio_i,
@@ -19,7 +20,8 @@ dynamicPredictionBio(
 )
 }
 \arguments{
-\item{bio_i}{Biomarker used to do prediction}
+\item{bio_i}{Biomarker used to do prediction. May be continuous or
+ordinal (see Details).}
 
 \item{data_predict_all}{This involves a collection of \code{data.frame} objects for
 dynamic prediction, each corresponding to a distinct longitudinal outcome.
@@ -53,10 +55,11 @@ findings and variables derived from the analysis.}
 in the order of \code{survival_variable_all}.}
 
 \item{bandcount2}{The number of grid points spanning
-\code{[prediction_time, upper_bound]}, where \code{upper_bound} is set
-internally to twice the longest observed survival/censoring time among
-at-risk patients; this approximates integrating out to infinity for the
-denominator that normalizes the predicted density. A wider follow-up range
+\code{[prediction_time + horizon, upper_bound]}, where \code{upper_bound}
+is set internally as the earliest time by which every at-risk patient's
+model-based probability of still being event-free (given event-free at
+\code{prediction_time + horizon}) has dropped below \code{1e-4}; this
+approximates integrating out to infinity for the denominator that normalizes the predicted density. A wider follow-up range
 needs a larger \code{bandcount2} to keep the grid spacing comparable.
 Defaults to \code{"auto"} (see Details).}
 
@@ -65,23 +68,67 @@ grid (\code{Y_all}) used to build the predicted density
 (\code{Y_density}) and locate its mode (\code{Y_predict}). This controls
 the resolution of the density curve, not a time integral; increase it if
 the density looks jagged or \code{Y_predict} jumps erratically between
-nearby grid points. Defaults to \code{"auto"} (see Details).}
+nearby grid points. Defaults to \code{"auto"} (see Details). Ignored when
+\code{bio_i} is ordinal (see Details) -- that candidate grid is always
+the biomarker's fixed category count.}
 }
 \value{
-An object of class \code{"dynamicPredictionBio.BJM"}, a named list with elements:
+An object of class \code{"predictLongitudinal.BJM"}, a named list with elements:
 \describe{
-\item{Y_predict}{A vector, one entry per patient, giving the MAP (most likely) predicted
-value of biomarker \code{bio_i} at \code{prediction_time + horizon}.}
+\item{Y_predict}{A vector, one entry per at-risk patient (named by patient id), giving the MAP (most likely) predicted
+value of biomarker \code{bio_i} at \code{prediction_time + horizon}. For an ordinal
+\code{bio_i}, this is an integer category code (see Details), not a raw value.}
 \item{Y_density}{A probability matrix whose rows correspond to the candidate biomarker
 values in \code{Y_all} and whose columns correspond to individual patients; each entry
-is the dynamically predicted density of the biomarker taking that value.}
-\item{Y_all}{The grid of candidate biomarker values used to build \code{Y_density}.}
+is the dynamically predicted density of the biomarker taking that value. For an ordinal
+\code{bio_i}, each row is instead that category's predicted probability.}
+\item{Y_all}{The grid of candidate biomarker values used to build \code{Y_density}. For an
+ordinal \code{bio_i}, this is the vector of integer category codes \code{1:K}, carrying a
+\code{"category_labels"} attribute with the matching level-label strings (see Details).}
 }
 }
 \description{
-The time values in the prediction data subset must be less than the
-specified \code{prediction_time} which is the prediction time. The time points for
-longitudinal repeated measurements must not surpass the prediction time.
+\strong{Internal single-biomarker engine} behind
+\code{\link{predictLongitudinal}} -- call \code{predictLongitudinal()}
+directly instead (it dispatches here automatically when \code{bio_i}
+names exactly one biomarker, and to \code{\link{dynamicPredictionBioAll}}
+otherwise). Kept as a separate internal function -- rather than folded
+into \code{predictLongitudinal()} -- because \code{\link{predictPlot}}
+and \code{\link{checkBandcountConvergence}} also call it directly for a
+single biomarker at a time.
+
+Companion to \code{\link{predictRisk}}, using the same fitted
+longitudinal (\code{\link{longitudinalSub}}) and survival
+(\code{\link{survivalSub}}) sub-models, but instead of an event-risk
+probability this returns a predictive density for a future value of one
+chosen biomarker (\code{bio_i}) at \code{prediction_time + horizon},
+conditional on the subject's observed longitudinal history up to
+\code{prediction_time} and on survival (being event-free) through
+\code{prediction_time + horizon}, the time the biomarker is predicted at.
+The density (\code{Y_density}, evaluated over a candidate-value grid
+\code{Y_all}) is obtained by integrating the biomarker's predictive
+distribution against the survival sub-model's hazard, using the subject's
+empirical-Bayes random-effects update from their observed history; its
+mode (\code{Y_predict}) is reported as the point prediction. As in
+\code{\link{predictRisk}}, the survival-side integrals are
+evaluated on numerical grids controlled by \code{bandcount2}, and the
+density itself is evaluated on a grid controlled by \code{bandcount3};
+see Details.
+
+\code{bio_i} may refer to either a \strong{continuous} or an
+\strong{ordinal} biomarker (see \code{\link{longitudinalSubCopula}});
+for an ordinal \code{bio_i}, \code{Y_all} and \code{Y_predict} hold
+integer \emph{category codes} (\code{1:K}, in the fitted factor's
+\code{levels()}/threshold order) rather than a numeric grid, with
+\code{Y_all} additionally carrying a \code{"category_labels"} attribute
+giving the matching level-label strings; \code{bandcount3} is ignored in
+that case, since the candidate grid is fixed at the biomarker's category
+count (see Details).
+
+The prediction is conditional on the longitudinal history observed up to
+\code{prediction_time}: rows of \code{data_predict_all} whose
+\code{time_variable} is later than \code{prediction_time} are dropped,
+with a warning, before predicting.
 }
 \details{
 There is no universal correct value for \code{bandcount2}/\code{bandcount3}:
@@ -100,69 +147,4 @@ previous package versions), or call \code{checkBandcountConvergence()}
 directly for more control over the tolerance and doubling count. See
 also \code{vignette("BJM-intro", package = "BJM")} for a worked example.
 }
-\examples{
-
-\donttest{
-data(pbc3)
-
-data_survival_fitting =  pbc3[!duplicated(pbc3$id), ]
-
-form_marginal_surv = Surv(years, status3) ~ age + sex
-form_conditional_cr = NULL
-
-survival_fit_all = survivalSub(data_survival_fitting, form_marginal_surv, 
-                               form_conditional_cr)
-
-long_sub_fixed = list(
-  "long1" = serBilir ~ year + age + sex +  (years) + (years) * year,  
-  "long2" = prothrombin ~ year + age + sex + (years) + (years) * year,  
-  "long3" = albumin ~ year + age + age * year + sex + (years) + (years) * year,  
-  "long4" = alkaline ~ year + age + sex + (years) + (years) * year, 
-  "long5" = SGOT ~ year + age + sex + (years) + (years) * year, 
-  "long6" = platelets ~ year + age + sex + (years)  + (years) * year)
-
-long_sub_random =list(
-  "long1" =  ~ year| id,   
-  "long2" =  ~ year| id,    
-  "long3" =  ~ year| id,    
-  "long4" =  ~ year| id,    
-  "long5" =  ~ year| id,    
-  "long6" =  ~ year| id)
-
-survival_variable_all = list(
-  "Tyears1",  "Tyears2", "Tyears3", "Tyears4"
-)
-
-survival_trans_function = list(
-  fun1 = function(x){abs(x - 1)}, 
-  fun2 = function(x){abs(x - 3)}, 
-  fun3 = function(x){abs(x - 5)}, 
-  fun4 = function(x){abs(x - 7)}
-)
-
-# Complete case analysis
-data_fit_all = list()
-for(i in seq_len(length(long_sub_fixed))){
-  data_fit_all[[i]] = pbc3[pbc3$status3 == 1, ]
-}
-
-# fitting longitudinal submodel
-long_fit_all = longitudinalSub(data_fit_all, long_sub_fixed, long_sub_random)
-
-i_PID = 2
-data.raw.predict.1 = pbc3[pbc3$id == i_PID, ]
-
-data_predict_all = list()
-for(i in seq_len(length(long_sub_fixed))){
-  data_predict_all[[i]] = data.raw.predict.1[data.raw.predict.1$year <= 3,]
-}
-
-Y_predict = dynamicPredictionBio(bio_i = 1, data_predict_all, long_fit_all, 
-                                 survival_fit_all, prediction_time = 3, 
-                                 horizon = 3, time_variable = "year",
-                                 survival_variable_all, survival_trans_function,
-                                 bandcount2 = 40, bandcount3 = 400)
-
-}
-
-}
+\keyword{internal}

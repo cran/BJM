@@ -12,7 +12,7 @@
 
 
 
-<title>Getting Started with BJM</title>
+<title>Getting started with BJM</title>
 
 <script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
 // be compatible with the behavior of Pandoc < 2.8).
@@ -337,7 +337,7 @@ code > span.er { color: #a61717; background-color: #e3d2d2; }
 
 
 
-<h1 class="title toc-ignore">Getting Started with BJM</h1>
+<h1 class="title toc-ignore">Getting started with BJM</h1>
 
 
 
@@ -355,10 +355,10 @@ point.</p>
 (and, optionally, a competing-risks sub-model).</li>
 <li><code>longitudinalSub()</code> fits the longitudinal sub-model(s),
 one per biomarker.</li>
-<li><code>dynamicPrediction()</code> combines the two fits to predict a
+<li><code>predictRisk()</code> combines the two fits to predict a
 patient’s event risk over a future horizon.</li>
-<li><code>dynamicPredictionBio()</code> additionally predicts a future
-value of one specific biomarker.</li>
+<li><code>predictLongitudinal()</code> additionally predicts a future
+value of one or more specific biomarkers.</li>
 </ol>
 <p>This vignette walks through all four steps on the <code>pbc3</code>
 data set that ships with the package, then covers two practical
@@ -402,8 +402,8 @@ causes among patients who had <em>some</em> event).</p>
 <span id="cb2-15"><a href="#cb2-15" tabindex="-1"></a><span class="co">#&gt; Data Descriptives:</span></span>
 <span id="cb2-16"><a href="#cb2-16" tabindex="-1"></a><span class="co">#&gt;   Number of subjects        : 312</span></span>
 <span id="cb2-17"><a href="#cb2-17" tabindex="-1"></a><span class="co">#&gt;   Number of events          : 169</span></span>
-<span id="cb2-18"><a href="#cb2-18" tabindex="-1"></a><span class="co">#&gt;   Cause-1 events (CR model) : 29</span></span>
-<span id="cb2-19"><a href="#cb2-19" tabindex="-1"></a><span class="co">#&gt;   Cause-2 events (CR model) : 140</span></span>
+<span id="cb2-18"><a href="#cb2-18" tabindex="-1"></a><span class="co">#&gt;   Cause-1 events (status4 = 0) : 140</span></span>
+<span id="cb2-19"><a href="#cb2-19" tabindex="-1"></a><span class="co">#&gt;   Cause-2 events (status4 = 1) : 29</span></span>
 <span id="cb2-20"><a href="#cb2-20" tabindex="-1"></a><span class="co">#&gt; </span></span>
 <span id="cb2-21"><a href="#cb2-21" tabindex="-1"></a><span class="co">#&gt; =================================================================</span></span>
 <span id="cb2-22"><a href="#cb2-22" tabindex="-1"></a><span class="co">#&gt;  Marginal Survival Sub-model  [Cox PH]</span></span>
@@ -471,7 +471,7 @@ complete-case subset.</p>
 <span id="cb3-19"><a href="#cb3-19" tabindex="-1"></a><span class="co">#&gt; =================================================================</span></span>
 <span id="cb3-20"><a href="#cb3-20" tabindex="-1"></a><span class="co">#&gt;  Longitudinal Sub-model(s)</span></span>
 <span id="cb3-21"><a href="#cb3-21" tabindex="-1"></a><span class="co">#&gt; -----------------------------------------------------------------</span></span>
-<span id="cb3-22"><a href="#cb3-22" tabindex="-1"></a><span class="co">#&gt;  [1] serBilir</span></span>
+<span id="cb3-22"><a href="#cb3-22" tabindex="-1"></a><span class="co">#&gt;  [1] serBilir (continuous)</span></span>
 <span id="cb3-23"><a href="#cb3-23" tabindex="-1"></a><span class="co">#&gt;  Formula: serBilir ~ year + age + sex + (years) + (years) * year</span></span>
 <span id="cb3-24"><a href="#cb3-24" tabindex="-1"></a><span class="co">#&gt; </span></span>
 <span id="cb3-25"><a href="#cb3-25" tabindex="-1"></a><span class="co">#&gt;                 Value        SE      t  p-value    </span></span>
@@ -490,7 +490,7 @@ complete-case subset.</p>
 <span id="cb3-38"><a href="#cb3-38" tabindex="-1"></a><span class="co">#&gt;   AIC: 1565.74,  BIC: 1613.45</span></span>
 <span id="cb3-39"><a href="#cb3-39" tabindex="-1"></a><span class="co">#&gt; </span></span>
 <span id="cb3-40"><a href="#cb3-40" tabindex="-1"></a><span class="co">#&gt; -----------------------------------------------------------------</span></span>
-<span id="cb3-41"><a href="#cb3-41" tabindex="-1"></a><span class="co">#&gt;  [2] albumin</span></span>
+<span id="cb3-41"><a href="#cb3-41" tabindex="-1"></a><span class="co">#&gt;  [2] albumin (continuous)</span></span>
 <span id="cb3-42"><a href="#cb3-42" tabindex="-1"></a><span class="co">#&gt;  Formula: albumin ~ year + age + sex + (years) + (years) * year</span></span>
 <span id="cb3-43"><a href="#cb3-43" tabindex="-1"></a><span class="co">#&gt; </span></span>
 <span id="cb3-44"><a href="#cb3-44" tabindex="-1"></a><span class="co">#&gt;                 Value        SE      t  p-value    </span></span>
@@ -514,13 +514,22 @@ complete-case subset.</p>
 <span id="cb3-62"><a href="#cb3-62" tabindex="-1"></a><span class="co">#&gt;               (Intercept)_1  year_1 (Intercept)_2  year_2</span></span>
 <span id="cb3-63"><a href="#cb3-63" tabindex="-1"></a><span class="co">#&gt; (Intercept)_1        0.6012 -0.0231       -0.0473 -0.0070</span></span>
 <span id="cb3-64"><a href="#cb3-64" tabindex="-1"></a><span class="co">#&gt; year_1              -0.0231  0.0193        0.0121 -0.0050</span></span>
-<span id="cb3-65"><a href="#cb3-65" tabindex="-1"></a><span class="co">#&gt; (Intercept)_2       -0.0473  0.0121        0.0722 -0.0045</span></span>
-<span id="cb3-66"><a href="#cb3-66" tabindex="-1"></a><span class="co">#&gt; year_2              -0.0070 -0.0050       -0.0045  0.0050</span></span>
+<span id="cb3-65"><a href="#cb3-65" tabindex="-1"></a><span class="co">#&gt; (Intercept)_2       -0.0473  0.0121        0.0721 -0.0044</span></span>
+<span id="cb3-66"><a href="#cb3-66" tabindex="-1"></a><span class="co">#&gt; year_2              -0.0070 -0.0050       -0.0044  0.0050</span></span>
 <span id="cb3-67"><a href="#cb3-67" tabindex="-1"></a><span class="co">#&gt; =================================================================</span></span></code></pre></div>
 </div>
-<div id="step-3-predict-event-risk-with-dynamicprediction" class="section level2">
-<h2>Step 3: Predict event risk with
-<code>dynamicPrediction()</code></h2>
+<div id="missing-biomarker-values" class="section level2">
+<h2>Missing biomarker values</h2>
+<p><code>longitudinalSub()</code> fits each biomarker’s mixed model on
+every visit at which that biomarker was measured, which is already valid
+when values are missing at random, so incomplete follow-up usually needs
+no special treatment. <code>imputeLongitudinal()</code> can fill in
+missing biomarker values first, which helps mainly when many patients
+never had some biomarker measured; see the <a href="https://wenhaoli18.github.io/BJM/articles/missing-data-imputation.html">Missing
+data imputation</a> article on the package website.</p>
+</div>
+<div id="step-3-predict-event-risk-with-predictrisk" class="section level2">
+<h2>Step 3: Predict event risk with <code>predictRisk()</code></h2>
 <p>To predict for a specific patient, build a
 <code>data_predict_all</code> list (one <code>data.frame</code> per
 biomarker, mirroring <code>data_fit_all</code>) containing only that
@@ -530,7 +539,7 @@ setting. Below we predict, for patient 2, the risk of each event type
 within one year of <code>year = 5</code>.</p>
 <p><code>survival_variable_all</code>/<code>survival_trans_function</code>
 describe how the raw event-time variable is transformed for the
-integration grid; see <code>?dynamicPrediction</code> for details.</p>
+integration grid; see <code>?predictRisk</code> for details.</p>
 <div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a>survival_variable_all <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="st">&quot;Tyears1&quot;</span>, <span class="st">&quot;Tyears2&quot;</span>, <span class="st">&quot;Tyears3&quot;</span>, <span class="st">&quot;Tyears4&quot;</span>)</span>
 <span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a>survival_trans_function <span class="ot">&lt;-</span> <span class="fu">list</span>(</span>
 <span id="cb4-3"><a href="#cb4-3" tabindex="-1"></a>  <span class="at">fun1 =</span> <span class="cf">function</span>(x) <span class="fu">abs</span>(x <span class="sc">-</span> <span class="dv">1</span>),</span>
@@ -539,10 +548,10 @@ integration grid; see <code>?dynamicPrediction</code> for details.</p>
 <span id="cb4-6"><a href="#cb4-6" tabindex="-1"></a>  <span class="at">fun4 =</span> <span class="cf">function</span>(x) <span class="fu">abs</span>(x <span class="sc">-</span> <span class="dv">7</span>)</span>
 <span id="cb4-7"><a href="#cb4-7" tabindex="-1"></a>)</span>
 <span id="cb4-8"><a href="#cb4-8" tabindex="-1"></a></span>
-<span id="cb4-9"><a href="#cb4-9" tabindex="-1"></a>data_raw_predict <span class="ot">&lt;-</span> pbc3[pbc3<span class="sc">$</span>id <span class="sc">==</span> <span class="dv">2</span>, ]</span>
+<span id="cb4-9"><a href="#cb4-9" tabindex="-1"></a>data_raw_predict <span class="ot">&lt;-</span> pbc3[pbc3<span class="sc">$</span>id <span class="sc">==</span> <span class="dv">2</span> <span class="sc">&amp;</span> pbc3<span class="sc">$</span>year <span class="sc">&lt;=</span> <span class="dv">5</span>, ]</span>
 <span id="cb4-10"><a href="#cb4-10" tabindex="-1"></a>data_predict_all <span class="ot">&lt;-</span> <span class="fu">list</span>(data_raw_predict, data_raw_predict)</span>
 <span id="cb4-11"><a href="#cb4-11" tabindex="-1"></a></span>
-<span id="cb4-12"><a href="#cb4-12" tabindex="-1"></a>risk <span class="ot">&lt;-</span> <span class="fu">dynamicPrediction</span>(</span>
+<span id="cb4-12"><a href="#cb4-12" tabindex="-1"></a>risk <span class="ot">&lt;-</span> <span class="fu">predictRisk</span>(</span>
 <span id="cb4-13"><a href="#cb4-13" tabindex="-1"></a>  data_predict_all, long_fit_all, survival_fit_all,</span>
 <span id="cb4-14"><a href="#cb4-14" tabindex="-1"></a>  <span class="at">prediction_time =</span> <span class="dv">5</span>, <span class="at">horizon =</span> <span class="dv">1</span>, <span class="at">time_variable =</span> <span class="st">&quot;year&quot;</span>,</span>
 <span id="cb4-15"><a href="#cb4-15" tabindex="-1"></a>  survival_variable_all, survival_trans_function,</span>
@@ -559,7 +568,7 @@ integration grid; see <code>?dynamicPrediction</code> for details.</p>
 <span id="cb4-26"><a href="#cb4-26" tabindex="-1"></a><span class="co">#&gt; -----------------------------------------------------------------</span></span>
 <span id="cb4-27"><a href="#cb4-27" tabindex="-1"></a><span class="co">#&gt; </span></span>
 <span id="cb4-28"><a href="#cb4-28" tabindex="-1"></a><span class="co">#&gt;  Subject Cause 1 Risk Cause 2 Risk Total Risk</span></span>
-<span id="cb4-29"><a href="#cb4-29" tabindex="-1"></a><span class="co">#&gt;       S1       0.0271       0.0012     0.0283</span></span>
+<span id="cb4-29"><a href="#cb4-29" tabindex="-1"></a><span class="co">#&gt;        2       0.0377       0.0017     0.0393</span></span>
 <span id="cb4-30"><a href="#cb4-30" tabindex="-1"></a><span class="co">#&gt; </span></span>
 <span id="cb4-31"><a href="#cb4-31" tabindex="-1"></a><span class="co">#&gt; =================================================================</span></span></code></pre></div>
 <p><code>survival_variable_all</code>/<code>survival_trans_function</code>
@@ -581,16 +590,20 @@ longitudinal history and survival to <code>prediction_time</code>.
 <code>survival_fit_all</code> was fit without
 <code>form_conditional_cr</code>.)</p>
 </div>
-<div id="step-4-predict-a-future-biomarker-value-with-dynamicpredictionbio" class="section level2">
+<div id="step-4-predict-a-future-biomarker-value-with-predictlongitudinal" class="section level2">
 <h2>Step 4: Predict a future biomarker value with
-<code>dynamicPredictionBio()</code></h2>
-<p><code>dynamicPredictionBio()</code> answers a different question: not
+<code>predictLongitudinal()</code></h2>
+<p><code>predictLongitudinal()</code> answers a different question: not
 <em>whether</em> an event happens, but what a specific biomarker’s value
 is likely to be at <code>prediction_time + horizon</code>, conditional
-on survival. <code>bio_i</code> selects the biomarker by its position in
-<code>long_fit_all</code> (<code>1</code> = <code>serBilir</code>
-here).</p>
-<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a>bio_pred <span class="ot">&lt;-</span> <span class="fu">dynamicPredictionBio</span>(</span>
+on survival to that time. <code>bio_i</code> selects the biomarker(s) by
+position in <code>long_fit_all</code> (<code>1</code> =
+<code>serBilir</code> here); naming exactly one biomarker returns a
+single result, while naming more than one (or leaving
+<code>bio_i = NULL</code> for every biomarker) returns a named list of
+results instead, computing the shared, bio_i-independent part of the
+pipeline only once and reusing it across every biomarker.</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a>bio_pred <span class="ot">&lt;-</span> <span class="fu">predictLongitudinal</span>(</span>
 <span id="cb6-2"><a href="#cb6-2" tabindex="-1"></a>  <span class="at">bio_i =</span> <span class="dv">1</span>, data_predict_all, long_fit_all, survival_fit_all,</span>
 <span id="cb6-3"><a href="#cb6-3" tabindex="-1"></a>  <span class="at">prediction_time =</span> <span class="dv">5</span>, <span class="at">horizon =</span> <span class="dv">1</span>, <span class="at">time_variable =</span> <span class="st">&quot;year&quot;</span>,</span>
 <span id="cb6-4"><a href="#cb6-4" tabindex="-1"></a>  survival_variable_all, survival_trans_function,</span>
@@ -598,7 +611,8 @@ here).</p>
 <span id="cb6-6"><a href="#cb6-6" tabindex="-1"></a>)</span>
 <span id="cb6-7"><a href="#cb6-7" tabindex="-1"></a></span>
 <span id="cb6-8"><a href="#cb6-8" tabindex="-1"></a>bio_pred<span class="sc">$</span>Y_predict</span>
-<span id="cb6-9"><a href="#cb6-9" tabindex="-1"></a><span class="co">#&gt; [1] 1.03628</span></span></code></pre></div>
+<span id="cb6-9"><a href="#cb6-9" tabindex="-1"></a><span class="co">#&gt;        2 </span></span>
+<span id="cb6-10"><a href="#cb6-10" tabindex="-1"></a><span class="co">#&gt; 1.193408</span></span></code></pre></div>
 <p><code>Y_predict</code> is the MAP (most likely) predicted value;
 <code>Y_density</code>/<code>Y_all</code> give the full predicted
 density over a grid of candidate values, which is what
@@ -608,27 +622,27 @@ density over a grid of candidate values, which is what
 <div id="choosing-bandcount1-bandcount2-bandcount3" class="section level2">
 <h2>Choosing <code>bandcount1</code>, <code>bandcount2</code>,
 <code>bandcount3</code></h2>
-<p><code>dynamicPrediction()</code> and
-<code>dynamicPredictionBio()</code> estimate their outputs by numerical
-integration over patient-specific time and biomarker grids. The
-<code>bandcount*</code> arguments control how fine those grids are:</p>
+<p><code>predictRisk()</code> and <code>predictLongitudinal()</code>
+estimate their outputs by numerical integration over patient-specific
+time and biomarker grids. The <code>bandcount*</code> arguments control
+how fine those grids are:</p>
 <ul>
-<li><strong><code>bandcount1</code></strong>
-(<code>dynamicPrediction()</code> only) is the number of grid points
-spanning the prediction window itself, from <code>prediction_time</code>
-to <code>prediction_time + horizon</code>. This is the numerator of the
+<li><strong><code>bandcount1</code></strong> (<code>predictRisk()</code>
+only) is the number of grid points spanning the prediction window
+itself, from <code>prediction_time</code> to
+<code>prediction_time + horizon</code>. This is the numerator of the
 risk probability.</li>
 <li><strong><code>bandcount2</code></strong> is the number of grid
-points spanning <code>[prediction_time, upper_bound]</code>, where
-<code>upper_bound</code> is set internally to twice the longest observed
-survival/censoring time among at-risk patients. This approximates
-“integrating out to infinity” for the denominator that normalizes the
-risk probability. A wider follow-up range needs a larger
+points spanning the time after the prediction window, up to an
+<code>upper_bound</code> set internally to where every at-risk patient’s
+model-based probability of still being event-free has become negligible.
+This approximates “integrating out to infinity” for the denominator that
+normalizes the risk probability. A wider follow-up range needs a larger
 <code>bandcount2</code> to keep the grid spacing comparable.</li>
 <li><strong><code>bandcount3</code></strong>
-(<code>dynamicPredictionBio()</code> only) is the number of points in
-the candidate-biomarker-value grid (<code>Y_all</code>) used to build
-the predicted density and locate its mode (<code>Y_predict</code>). It
+(<code>predictLongitudinal()</code> only) is the number of points in the
+candidate-biomarker-value grid (<code>Y_all</code>) used to build the
+predicted density and locate its mode (<code>Y_predict</code>). It
 controls the resolution of the density curve, not a time integral.</li>
 </ul>
 <p>Larger values give more accurate, smoother results at the cost of
@@ -638,14 +652,14 @@ change and on the length of follow-up in your data — so the practical
 approach is a <strong>convergence check</strong>: run the prediction
 once with the defaults, once with every <code>bandcount*</code> doubled,
 and confirm the results barely move.</p>
-<div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" tabindex="-1"></a>risk_default <span class="ot">&lt;-</span> <span class="fu">dynamicPrediction</span>(</span>
+<div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" tabindex="-1"></a>risk_default <span class="ot">&lt;-</span> <span class="fu">predictRisk</span>(</span>
 <span id="cb7-2"><a href="#cb7-2" tabindex="-1"></a>  data_predict_all, long_fit_all, survival_fit_all,</span>
 <span id="cb7-3"><a href="#cb7-3" tabindex="-1"></a>  <span class="at">prediction_time =</span> <span class="dv">5</span>, <span class="at">horizon =</span> <span class="dv">1</span>, <span class="at">time_variable =</span> <span class="st">&quot;year&quot;</span>,</span>
 <span id="cb7-4"><a href="#cb7-4" tabindex="-1"></a>  survival_variable_all, survival_trans_function,</span>
 <span id="cb7-5"><a href="#cb7-5" tabindex="-1"></a>  <span class="at">bandcount1 =</span> <span class="dv">10</span>, <span class="at">bandcount2 =</span> <span class="dv">20</span></span>
 <span id="cb7-6"><a href="#cb7-6" tabindex="-1"></a>)</span>
 <span id="cb7-7"><a href="#cb7-7" tabindex="-1"></a></span>
-<span id="cb7-8"><a href="#cb7-8" tabindex="-1"></a>risk_doubled <span class="ot">&lt;-</span> <span class="fu">dynamicPrediction</span>(</span>
+<span id="cb7-8"><a href="#cb7-8" tabindex="-1"></a>risk_doubled <span class="ot">&lt;-</span> <span class="fu">predictRisk</span>(</span>
 <span id="cb7-9"><a href="#cb7-9" tabindex="-1"></a>  data_predict_all, long_fit_all, survival_fit_all,</span>
 <span id="cb7-10"><a href="#cb7-10" tabindex="-1"></a>  <span class="at">prediction_time =</span> <span class="dv">5</span>, <span class="at">horizon =</span> <span class="dv">1</span>, <span class="at">time_variable =</span> <span class="st">&quot;year&quot;</span>,</span>
 <span id="cb7-11"><a href="#cb7-11" tabindex="-1"></a>  survival_variable_all, survival_trans_function,</span>
@@ -653,14 +667,16 @@ and confirm the results barely move.</p>
 <span id="cb7-13"><a href="#cb7-13" tabindex="-1"></a>)</span>
 <span id="cb7-14"><a href="#cb7-14" tabindex="-1"></a></span>
 <span id="cb7-15"><a href="#cb7-15" tabindex="-1"></a><span class="fu">abs</span>(risk_default<span class="sc">$</span>risk_prob_1 <span class="sc">-</span> risk_doubled<span class="sc">$</span>risk_prob_1)</span>
-<span id="cb7-16"><a href="#cb7-16" tabindex="-1"></a><span class="co">#&gt; [1] 0.003174651</span></span>
-<span id="cb7-17"><a href="#cb7-17" tabindex="-1"></a><span class="fu">abs</span>(risk_default<span class="sc">$</span>risk_prob_2 <span class="sc">-</span> risk_doubled<span class="sc">$</span>risk_prob_2)</span>
-<span id="cb7-18"><a href="#cb7-18" tabindex="-1"></a><span class="co">#&gt; [1] 0.0001377631</span></span></code></pre></div>
+<span id="cb7-16"><a href="#cb7-16" tabindex="-1"></a><span class="co">#&gt;            2 </span></span>
+<span id="cb7-17"><a href="#cb7-17" tabindex="-1"></a><span class="co">#&gt; 0.0004505047</span></span>
+<span id="cb7-18"><a href="#cb7-18" tabindex="-1"></a><span class="fu">abs</span>(risk_default<span class="sc">$</span>risk_prob_2 <span class="sc">-</span> risk_doubled<span class="sc">$</span>risk_prob_2)</span>
+<span id="cb7-19"><a href="#cb7-19" tabindex="-1"></a><span class="co">#&gt;            2 </span></span>
+<span id="cb7-20"><a href="#cb7-20" tabindex="-1"></a><span class="co">#&gt; 1.993996e-05</span></span></code></pre></div>
 <p>If doubling the <code>bandcount*</code> values changes the result by
 more than you can tolerate, keep doubling until it doesn’t; if it barely
 changes anything (as above), the smaller, cheaper value is fine to use.
 The same check applies to <code>bandcount3</code> for
-<code>dynamicPredictionBio()</code>.</p>
+<code>predictLongitudinal()</code>.</p>
 </div>
 <div id="friendly-error-messages" class="section level2">
 <h2>Friendly error messages</h2>
@@ -669,8 +685,8 @@ model fitting or numerical integration, so common mistakes fail fast
 with a message that names the offending argument — instead of a cryptic
 error from deep inside <code>model.matrix()</code> or list indexing. For
 example, passing a single <code>data.frame</code> instead of a list to
-<code>dynamicPrediction()</code>:</p>
-<div class="sourceCode" id="cb8"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" tabindex="-1"></a><span class="fu">dynamicPrediction</span>(</span>
+<code>predictRisk()</code>:</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" tabindex="-1"></a><span class="fu">predictRisk</span>(</span>
 <span id="cb8-2"><a href="#cb8-2" tabindex="-1"></a>  data_predict_all[[<span class="dv">1</span>]], long_fit_all, survival_fit_all,</span>
 <span id="cb8-3"><a href="#cb8-3" tabindex="-1"></a>  <span class="at">prediction_time =</span> <span class="dv">5</span>, <span class="at">horizon =</span> <span class="dv">1</span>, <span class="at">time_variable =</span> <span class="st">&quot;year&quot;</span>,</span>
 <span id="cb8-4"><a href="#cb8-4" tabindex="-1"></a>  survival_variable_all, survival_trans_function,</span>
@@ -685,7 +701,7 @@ example, passing a single <code>data.frame</code> instead of a list to
 <span id="cb8-13"><a href="#cb8-13" tabindex="-1"></a><span class="co">#&gt; -----------------------------------------------------------------</span></span>
 <span id="cb8-14"><a href="#cb8-14" tabindex="-1"></a><span class="co">#&gt; </span></span>
 <span id="cb8-15"><a href="#cb8-15" tabindex="-1"></a><span class="co">#&gt;  Subject Cause 1 Risk Cause 2 Risk Total Risk</span></span>
-<span id="cb8-16"><a href="#cb8-16" tabindex="-1"></a><span class="co">#&gt;       S1       0.0271       0.0012     0.0283</span></span>
+<span id="cb8-16"><a href="#cb8-16" tabindex="-1"></a><span class="co">#&gt;        2       0.0377       0.0017     0.0393</span></span>
 <span id="cb8-17"><a href="#cb8-17" tabindex="-1"></a><span class="co">#&gt; </span></span>
 <span id="cb8-18"><a href="#cb8-18" tabindex="-1"></a><span class="co">#&gt; =================================================================</span></span></code></pre></div>
 <p>or a formula referencing a column that doesn’t exist:</p>
@@ -695,13 +711,28 @@ example, passing a single <code>data.frame</code> instead of a list to
 <div id="where-to-go-next" class="section level2">
 <h2>Where to go next</h2>
 <ul>
+<li>The articles on the <a href="https://wenhaoli18.github.io/BJM/">package website</a> cover
+competing risks, plotting, categorical (ordinal or binary) biomarkers,
+missing data imputation, interval-censored and recurrent events, and
+simulated futures in more depth.</li>
 <li><code>?predictPlot</code> and <code>?riskPlot</code> visualize the
-outputs of
-<code>dynamicPredictionBio()</code>/<code>dynamicPrediction()</code> for
-a single patient.</li>
+outputs of <code>predictLongitudinal()</code>/<code>predictRisk()</code>
+for a single patient.</li>
 <li><code>?cmtPlot</code> plots observed longitudinal trajectories
 stratified by eventual outcome, useful for checking whether a biomarker
 looks informative before fitting.</li>
+<li><code>?spaghettiPlot</code> draws each subject’s observed
+trajectory, optionally aligned at the event time, and
+<code>?cifPlot</code> plots the cumulative incidence of each (competing)
+event type.</li>
+<li><code>?performancePlot</code> evaluates the risk predictions
+(time-dependent AUC and Brier score) across landmark times, ideally on
+held-out data, and <code>?calibrationPlot</code> compares the predicted
+with the observed risks.</li>
+<li><code>?imputeLongitudinal</code> and
+<code>?poolLongitudinalSub</code> impute missing biomarker values and
+pool the fits to several completions (see “Missing biomarker values”
+above).</li>
 </ul>
 </div>
 

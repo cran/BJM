@@ -2,7 +2,7 @@
 % Please edit documentation in R/riskPlot.R
 \name{riskPlot}
 \alias{riskPlot}
-\title{Plot of risk using dynamic prediction}
+\title{Plot predicted risk across a sweep of landmark times}
 \usage{
 riskPlot(
   data_predict_all_pre,
@@ -38,9 +38,15 @@ encompassing the results and parameters obtained from the analysis.}
 procedure, utilizing the \code{coxph} function. These outputs include the comprehensive
 findings and variables derived from the analysis.}
 
-\item{prediction_time}{Time used to make the prediction.}
+\item{prediction_time}{The landmark time(s) at which risks are predicted
+and plotted: \code{NULL} (the default) uses every visit time
+(\code{time_variable}) in the patient's data; a single value \code{s} uses the three
+landmarks \code{s}, \code{1.5 * s} and \code{2 * s}; a vector uses those
+times. At each landmark only the history up to it is used.}
 
-\item{bio_i}{Biomarker used to do prediction.}
+\item{bio_i}{Biomarker whose observed history is drawn alongside the
+predicted risks (by position in \code{long_fit_all}); \code{NULL} draws
+the first one.}
 
 \item{horizon}{Prediction horizon.}
 
@@ -57,7 +63,7 @@ values give a more accurate but slower estimate. Defaults to \code{"auto"},
 which resolves it once, before looping over the landmark times, (using
 the first landmark time as a representative probe) by doubling from a
 built-in starting value until the predicted risk stabilizes; see
-\code{\link{dynamicPrediction}}'s \code{bandcount1} for details of that
+\code{\link{predictRisk}}'s \code{bandcount1} for details of that
 search. The resolved value is then reused, fixed, for every landmark
 time -- it is not re-searched on every iteration.}
 
@@ -68,7 +74,7 @@ spacing comparable. Defaults to \code{"auto"}; resolved the same way as
 \code{bandcount1} (jointly with it, when both are \code{"auto"}).
 
 Pass explicit numbers instead of \code{"auto"} for full manual control, or
-use \code{checkBandcountConvergence()} (applied to \code{dynamicPrediction()}
+use \code{checkBandcountConvergence()} (applied to \code{predictRisk()}
 directly) to inspect the convergence behavior yourself. See also
 \code{vignette("BJM-intro", package = "BJM")} for further guidance on
 choosing \code{bandcount1}/\code{bandcount2}.}
@@ -90,5 +96,43 @@ are computed (not the order results are assembled in) changes.}
 Plot of risk using dynamic prediction.
 }
 \description{
-This function gives the risk prediction plot.
+Fixes the prediction horizon and sweeps backward/forward over a set of
+landmark times, calling \code{\link{predictRisk}} at each landmark
+in \code{prediction_time} to trace out how predicted event risk over that
+fixed-length window changes as the landmark moves -- i.e. as more (or
+less) of the subject's longitudinal history is used to update their
+risk. \code{prediction_time} may be a vector of landmark times to use
+directly; a single value, which is expanded to three landmarks
+(\code{prediction_time}, \code{1.5 * prediction_time},
+\code{2 * prediction_time}); or \code{NULL}, which uses every observed
+longitudinal measurement time (across subjects, from the first
+biomarker's data) as a landmark. This contrasts with
+\code{\link{predictPlot}}, which instead fixes the landmark and sweeps
+over a range of horizons. The optional \code{bio_i} argument only selects
+which biomarker's observed trajectory is overlaid on the plot for visual
+reference -- it does not affect the risk computation itself (unlike
+\code{\link{predictPlot}}'s \code{bio_pred}, which drives a biomarker
+density prediction).
+
+When the data give the subject's survival time and status, a vertical
+line marks the end of follow-up: solid for an observed event (coloured by
+event type with competing risks), dashed grey for a censoring.
+}
+\examples{
+\donttest{
+data(pbc3)
+survival_fit_all <- survivalSub(pbc3[!duplicated(pbc3$id), ],
+                                Surv(years, status3) ~ age + sex, NULL)
+long_fit_all <- longitudinalSub(pbc3[pbc3$status3 == 1, ],
+                                list(serBilir ~ year + age + sex + years,
+                                     albumin ~ year + age + sex + years),
+                                list(~ year | id, ~ year | id))
+
+# one patient's whole history; risks within 2 years of landmarks 2, 3, 4
+patient <- pbc3[pbc3$id == 2, ]
+riskPlot(patient, long_fit_all, survival_fit_all, prediction_time = c(2, 3, 4),
+         bio_i = 1, horizon = 2, time_variable = "year",
+         survival_variable_all = list(), survival_trans_function = list(),
+         bandcount1 = 10, bandcount2 = 20)
+}
 }

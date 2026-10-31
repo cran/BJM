@@ -1,11 +1,24 @@
-#' The process involves estimating parameters for a multivariate linear mixed-effects 
-#' model, which simultaneously analyzes multiple dependent variables that may be 
-#' correlated. This approach incorporates both fixed effects, which are consistent 
-#' across the population, and random effects, accounting for variations within 
-#' groups or subjects. By fitting this model, one can assess the influence of 
-#' predictor variables on several longitudinal outcomes while considering the inherent 
-#' variability in the data due to random effects.
-#' 
+#' Fit a multivariate longitudinal sub-model
+#'
+#' @description
+#' Fits one linear mixed-effects model per longitudinal biomarker separately
+#' (via \code{\link[nlme]{lme}}), keeping each biomarker's own fixed-effects
+#' and residual-variance estimates from that separate fit. The \code{M}
+#' separate fits are then combined into a single multivariate model by
+#' re-estimating the full random-effects variance-covariance matrix jointly
+#' across all \code{M} biomarkers, via an EM algorithm initialized from the
+#' block-diagonal covariance implied by the separate fits -- so correlation
+#' between biomarkers' random effects is captured, even though the fixed
+#' effects and residual variances themselves are not re-estimated jointly
+#' and remain exactly what each biomarker's own \code{lme()} fit produced.
+#' This lets you assess the effect of predictor variables on several
+#' longitudinal outcomes at once while accounting for both population-level
+#' (fixed) effects and subject-level (random) variability, and for how the
+#' outcomes covary within a subject. The result is one of the two sub-models
+#' -- together with \code{\link{survivalSub}} -- that
+#' \code{\link{predictRisk}}/\code{\link{dynamicPredictionBio}}
+#' combine to produce dynamic risk/biomarker predictions.
+#'
 #' @param data_fit_all This process requires a set of \code{data.frame} objects 
 #' designated for model fitting, with each \code{data.frame} representing a 
 #' separate longitudinal outcome. These \code{data.frame} objects must include the 
@@ -24,14 +37,16 @@
 #' a conventional univariate joint model is being constructed.
 #' Terms whose basis/contrasts depend on the data they are computed from --
 #' \code{poly()} in its default orthogonal mode, \code{splines::ns()}/
-#' \code{splines::bs()}, and \code{factor()} -- trigger a warning, because
-#' \code{dynamicPrediction()}/\code{dynamicPredictionBio()} rebuild the
-#' design matrix from a small, patient-specific slice of data at every point
-#' on the prediction grid, so the basis recomputed at prediction time can
-#' silently disagree with the one used to fit the model (or fail outright
-#' with too few distinct values). Prefer \code{poly(..., raw = TRUE)},
-#' \code{I(x^2)}, \code{log()}, \code{sqrt()}, or other terms that do not
-#' depend on the surrounding data.
+#' \code{splines::bs()}, and \code{factor()} -- are fine in a continuous
+#' biomarker's \code{long_sub_fixed} formula: the basis and factor levels the
+#' model was fit with are reused when estimating \code{Sigma_fit} and at
+#' prediction time. In \code{long_sub_random}, or in an ordinal biomarker's
+#' \code{long_sub_fixed}, they trigger a warning, because there the design
+#' matrix is still rebuilt from the data at hand (a single patient's rows at
+#' prediction time), so the basis can silently disagree with the one used to
+#' fit the model. Prefer \code{poly(..., raw = TRUE)}, \code{I(x^2)},
+#' \code{log()}, \code{sqrt()}, or other terms that do not depend on the
+#' surrounding data there.
 #' 
 #' @param long_sub_random A list of one-sided formulas that define the model for the 
 #' random effects of each longitudinal outcome. 
@@ -73,17 +88,6 @@
 #'   "long5" =  ~ year| id,    
 #'   "long6" =  ~ year| id)
 #' 
-#' survival_variable_all = list(
-#'   "Tyears1",  "Tyears2", "Tyears3", "Tyears4"
-#' )
-#' 
-#' survival_trans_function = list(
-#'   fun1 = function(x){abs(x - 1)}, 
-#'   fun2 = function(x){abs(x - 3)}, 
-#'   fun3 = function(x){abs(x - 5)}, 
-#'   fun4 = function(x){abs(x - 7)}
-#' )
-#' 
 #' # Complete case analysis
 #' data_fit_all = list()
 #' for(i in seq_len(length(long_sub_fixed))){
@@ -94,24 +98,164 @@
 #' long_fit_all = longitudinalSub(data_fit_all, long_sub_fixed, long_sub_random)
 #'
 #' # poly() in its default orthogonal mode, splines::ns()/bs(), and
-#' # factor() trigger a warning (see the long_sub_fixed argument above),
-#' # but are still safe to use: the terms/xlevels/contrasts fit on the
-#' # full training data are cached and reused at prediction time, instead
-#' # of being recomputed from each patient's small per-prediction slice.
+#' # factor() are safe in a continuous biomarker's long_sub_fixed: the
+#' # terms/xlevels/contrasts fit on the full training data are cached and
+#' # reused when estimating Sigma_fit and at prediction time, instead of
+#' # being recomputed from each patient's small per-prediction slice.
 #' long_fit_poly = longitudinalSub(
 #'   pbc3[pbc3$status3 == 1, ],
 #'   serBilir ~ year + poly(age, 2) + factor(sex) + years,
 #'   ~ year | id)
 #'
+#' # A few more nonlinear-term styles. None of these would trigger the
+#' # warning even in long_sub_random, because their basis doesn't depend on the surrounding
+#' # data at all -- there's simply nothing that could disagree between the
+#' # full training data and the small per-patient slice used at prediction
+#' # time.
+#' data_fit_extra_terms = pbc3[pbc3$status3 == 1, ]
+#' # A transformed-time column can also be built once with survivalTrans()
+#' # and merged onto the fitting data ahead of time -- by the time
+#' # long_sub_fixed sees it, it is just an ordinary numeric column, same as
+#' # any of the other terms below.
+#' data_fit_extra_terms$Tyears1 = survivalTrans(c(1, 3, 5, 7))$survival_trans_function[[1]](
+#'   data_fit_extra_terms$year)
+#'
+#' long_fit_nonlinear = list(
+#'   longitudinalSub(data_fit_extra_terms, serBilir ~ year + I(year^2) + age + sex,
+#'                    ~ year | id),
+#'   longitudinalSub(data_fit_extra_terms, serBilir ~ year + I(year^2) * age + sex,
+#'                    ~ year | id),
+#'   longitudinalSub(data_fit_extra_terms, serBilir ~ year + log(year + 1) + age + sex,
+#'                    ~ year | id),
+#'   longitudinalSub(data_fit_extra_terms, serBilir ~ year + sqrt(year) + age + sex,
+#'                    ~ year | id),
+#'   longitudinalSub(data_fit_extra_terms, serBilir ~ poly(year, 2, raw = TRUE) + age + sex,
+#'                    ~ year | id),
+#'   longitudinalSub(data_fit_extra_terms, serBilir ~ year + Tyears1 + age + sex,
+#'                    ~ year | id)
+#' )
+#'
 #' }
 #'
+#' @param biomarker_type Optional character vector, one entry per
+#' longitudinal outcome, each either \code{"continuous"} or \code{"ordinal"}.
+#' When supplied, it always takes priority. When \code{NULL} (the default),
+#' each biomarker's type is auto-detected from its own response column in
+#' \code{data_fit_all}: a \code{factor}/\code{ordered factor} response is
+#' treated as \code{"ordinal"}, anything else as \code{"continuous"}. If
+#' every biomarker is continuous (the original use case), fitting proceeds
+#' exactly as before with no behavior change whatsoever. If at least one
+#' biomarker is ordinal, that biomarker is instead fit with
+#' \code{ordinal::clmm()} (a probit cumulative link mixed model, requiring
+#' the optional \pkg{ordinal} package) and folded into the shared
+#' random-effects covariance matrix via a Gaussian-copula extension of the
+#' EM algorithm -- see \code{longitudinalSubCopula()} for implementation
+#' details.
+#'
 #' @export
-longitudinalSub <- function(data_fit_all, long_sub_fixed, long_sub_random) {
+longitudinalSub <- function(data_fit_all, long_sub_fixed, long_sub_random, biomarker_type = NULL) {
   long_sub_fixed_check <- if (is.list(long_sub_fixed)) long_sub_fixed else list(long_sub_fixed)
   long_sub_random_check <- if (is.list(long_sub_random)) long_sub_random else list(long_sub_random)
   assert_all_formulas(long_sub_fixed_check, "long_sub_fixed")
   assert_all_formulas(long_sub_random_check, "long_sub_random")
-  warn_unsafe_formula_terms(long_sub_fixed_check, "long_sub_fixed")
+  if (length(long_sub_fixed_check) != length(long_sub_random_check)) {
+    stop(sprintf(
+      "`long_sub_fixed` has %d element(s) but `long_sub_random` has %d; they must describe the same number of longitudinal outcomes.",
+      length(long_sub_fixed_check), length(long_sub_random_check)
+    ), call. = FALSE)
+  }
+  M <- length(long_sub_fixed_check)
+
+  assert_data_list(data_fit_all, "data_fit_all", M, allow_bare_df = TRUE)
+  data_fit_all_norm <- if (!is.list(data_fit_all) || is.data.frame(data_fit_all)) {
+    rep(list(data_fit_all), M)
+  } else {
+    data_fit_all
+  }
+
+  ### prediction rebuilds each response from its data column by name, so a
+  ### transformed left-hand side (e.g. log(y)) fit fine here but failed later
+  ### in predictRisk() with "undefined columns selected"
+  for (m in seq_len(M)) {
+    lhs <- long_sub_fixed_check[[m]][[2]]
+    if (!is.symbol(lhs)) {
+      stop(sprintf(paste0(
+        "`long_sub_fixed[[%d]]` has a transformed left-hand side (%s); each response must be a ",
+        "bare column name. Add the transformed variable to the data as its own column instead."),
+        m, deparse(lhs)), call. = FALSE)
+    }
+  }
+
+  biomarker_type_resolved <- resolve_biomarker_type(biomarker_type, data_fit_all_norm, long_sub_fixed_check, M)
+  for (m in which(biomarker_type_resolved == "continuous")) {
+    resp_name <- as.character(long_sub_fixed_check[[m]][[2]])
+    resp <- data_fit_all_norm[[m]][[resp_name]]
+    if (!is.null(resp) && !is.numeric(resp)) {
+      stop(sprintf(paste0(
+        "Biomarker %d (`%s`) is treated as continuous but is not numeric; convert it with ",
+        "as.numeric() or set its biomarker_type to \"ordinal\"."), m, resp_name), call. = FALSE)
+    }
+  }
+
+  ### Hard requirement: an all-continuous input must behave exactly as
+  ### before. longitudinalSubGaussian() is a verbatim copy of this
+  ### function's original body, called here with the *pristine, unmodified*
+  ### arguments as supplied by the caller -- not the normalized-to-list
+  ### copies above -- so the all-continuous code path is byte-for-byte
+  ### identical to what ran prior to biomarker_type existing at all.
+  if (all(biomarker_type_resolved == "continuous")) {
+    return(longitudinalSubGaussian(data_fit_all, long_sub_fixed, long_sub_random))
+  }
+
+  ordinal_fixed <- long_sub_fixed_check
+  ordinal_fixed[biomarker_type_resolved != "ordinal"] <- list(~ 1)
+  warn_unsafe_formula_terms(ordinal_fixed, "long_sub_fixed")
+  warn_unsafe_formula_terms(long_sub_random_check, "long_sub_random")
+
+  id <- as.character(nlme::splitFormula(long_sub_random_check[[1]], "|")[[2]])[2]
+  for (m in seq_len(M)) {
+    assert_vars_in_data(unique(c(all.vars(long_sub_fixed_check[[m]]), all.vars(long_sub_random_check[[m]]), id)),
+                         data_fit_all_norm[[m]],
+                         sprintf("long_sub_fixed[[%d]]/long_sub_random[[%d]]", m, m),
+                         sprintf("data_fit_all[[%d]]", m))
+  }
+
+  ### biomarker_type = "ordinal" may be given for a response that is not a
+  ### factor (e.g. a 0/1/2 score); clmm() needs a factor, which it used to
+  ### fail on. A numeric (or logical) response is ordered by value; a
+  ### character one becomes an unordered factor, so fit_marginal_ordinal()
+  ### warns that its alphabetical order is taken as the category order.
+  for (m in which(biomarker_type_resolved == "ordinal")) {
+    resp_name <- all.vars(long_sub_fixed_check[[m]])[1]
+    resp <- data_fit_all_norm[[m]][[resp_name]]
+    if (is.numeric(resp) || is.logical(resp)) {
+      data_fit_all_norm[[m]][[resp_name]] <- factor(resp, levels = sort(unique(resp)), ordered = TRUE)
+    } else if (is.character(resp)) {
+      data_fit_all_norm[[m]][[resp_name]] <- factor(resp)
+    }
+  }
+
+  longitudinalSubCopula(data_fit_all_norm, long_sub_fixed_check, long_sub_random_check,
+                         biomarker_type_resolved, M)
+}
+
+#' Fit a multivariate longitudinal sub-model (all-continuous biomarkers)
+#'
+#' @description Internal workhorse for \code{\link{longitudinalSub}} when
+#' every biomarker is continuous. This is the original \code{longitudinalSub}
+#' implementation, kept verbatim and called with the caller's pristine,
+#' unmodified arguments, so that the all-continuous case behaves exactly as
+#' it always has -- see \code{\link{longitudinalSub}} for the argument
+#' documentation, and \code{longitudinalSubCopula()} for the mixed
+#' continuous/ordinal extension used when at least one biomarker is
+#' categorical.
+#' @keywords internal
+longitudinalSubGaussian <- function(data_fit_all, long_sub_fixed, long_sub_random) {
+  long_sub_fixed_check <- if (is.list(long_sub_fixed)) long_sub_fixed else list(long_sub_fixed)
+  long_sub_random_check <- if (is.list(long_sub_random)) long_sub_random else list(long_sub_random)
+  assert_all_formulas(long_sub_fixed_check, "long_sub_fixed")
+  assert_all_formulas(long_sub_random_check, "long_sub_random")
+  warn_unsafe_formula_terms(long_sub_random_check, "long_sub_random")
   if (length(long_sub_fixed_check) != length(long_sub_random_check)) {
     stop(sprintf(
       "`long_sub_fixed` has %d element(s) but `long_sub_random` has %d; they must describe the same number of longitudinal outcomes.",
@@ -144,12 +288,8 @@ longitudinalSub <- function(data_fit_all, long_sub_fixed, long_sub_random) {
                          sprintf("long_sub_fixed[[%d]]/long_sub_random[[%d]]", m, m),
                          sprintf("data_fit_all[[%d]]", m))
   }
-  ### number of patients, should be the same for each biomarker list
-  ### changed and add unlist
-  n <- length(unlist(unique(data_fit_all[[1]][, id])))
   
   lfit <- list()
-  lfit_0 <- list()
   mf.fixed <- list()
   xlevels <- list()
   yik <- list()
@@ -165,7 +305,7 @@ longitudinalSub <- function(data_fit_all, long_sub_fixed, long_sub_random) {
   for (m in 1:M) {
     data.fit.one = data_fit_all[[m]]
     ##exclude NA 
-    data.fit.one <- data.fit.one[!as.logical(rowSums(data.frame(is.na(data.fit.one[all.vars(long_sub_fixed[[m]])])) )),]
+    data.fit.one <- data.fit.one[!as.logical(rowSums(data.frame(is.na(data.fit.one[model_vars(long_sub_fixed[[m]], long_sub_random[[m]])])) )),]
     unique_num[[m]] = unique(unlist(data.fit.one[id])) 
   }
   
@@ -184,20 +324,26 @@ longitudinalSub <- function(data_fit_all, long_sub_fixed, long_sub_random) {
     data.fit.one = data_fit_all[[m]]
     #ctrl <- lmeControl(1000, 1000, opt='optim')
     # List of m separate longitudinal model fits
-    lfit[[m]] <- nlme::lme(fixed = long_sub_fixed[[m]], random = long_sub_random[[m]],
-                           data = data.fit.one, method = "ML",
-                           control = nlme::lmeControl(opt = "optim"), na.action = na.omit)
+    lfit[[m]] <- lme_with_retry(nlme::lme(fixed = long_sub_fixed[[m]], random = long_sub_random[[m]],
+                                          data = data.fit.one, method = "ML",
+                                          control = nlme::lmeControl(opt = "optim"), na.action = na.omit),
+                                as.character(long_sub_fixed[[m]][[2]]))
     lfit[[m]]$call$fixed <- eval(lfit[[m]]$call$fixed)
+
+    ### factor levels of the data lme() was fit on (before restricting to
+    ### the subjects retained in the joint fit, which may lack some levels)
+    xlevels[[m]] <- training_xlevels(lfit[[m]]$terms, data.fit.one, long_sub_fixed[[m]])
     
     ##exclude NA 
-    data.fit.one <- data.fit.one[!as.logical(rowSums(data.frame(is.na(data.fit.one[all.vars(formula(lfit[[m]]))])) )),]
+    data.fit.one <- data.fit.one[!as.logical(rowSums(data.frame(is.na(data.fit.one[model_vars(long_sub_fixed[[m]], long_sub_random[[m]])])) )),]
     
     ##interaction among different biomarkers
     data.fit.one = data.fit.one[unlist(data.fit.one[id]) %in% unlist(all_biomarker_num),]
     
     # Model frames
     mf.fixed[[m]] <- model.frame(lfit[[m]]$terms,
-                                 data.fit.one[, all.vars(long_sub_fixed[[m]])])
+                                 data.fit.one[, all.vars(long_sub_fixed[[m]])],
+                                 xlev = xlevels[[m]])
 
     ### factor levels observed in the full training data, cached so that
     ### prediction-time code can rebuild a model.frame() from a small,
@@ -206,14 +352,19 @@ longitudinalSub <- function(data_fit_all, long_sub_fixed, long_sub_random) {
     ### factor() error with "contrasts can be applied only to factors with 2
     ### or more levels", or -- for poly()/splines::ns()/bs() -- recompute a
     ### different basis than the one the model was fit with).
-    xlevels[[m]] <- .getXlevels(lfit[[m]]$terms, mf.fixed[[m]])
 
     # Longitudinal outcomes by using "model.response" to get the response variable
-    yik[[m]] <- by(model.response(mf.fixed[[m]], "numeric"), droplevels(data.fit.one[, id]), as.vector)
+    yik[[m]] <- by(model.response(mf.fixed[[m]], "numeric"), factor(data.fit.one[[id]]), as.vector)
     
     # X design matrix, fixed effects design matrix
-    Xik[[m]] <- data.frame("id2" = droplevels(data.fit.one[, id]),
-                           model.matrix(long_sub_fixed[[m]], data.fit.one))
+    ### built from lme()'s own terms (which carry the training-data basis of
+    ### poly()/ns()/bs() via predvars) and levels, not re-derived from the
+    ### formula on the retained subjects only -- that recomputed a different
+    ### basis than the one beta was estimated on whenever subjects were
+    ### excluded, corrupting the EM residuals behind Sigma_fit.
+    Xik[[m]] <- data.frame("id2" = factor(data.fit.one[[id]]),
+                           model.matrix(lfit[[m]]$terms, mf.fixed[[m]],
+                                        contrasts.arg = lfit[[m]]$contrasts))
     
     # n_k (number of observations per each m)
     nk[m] <- nrow(Xik[[m]])
@@ -230,13 +381,13 @@ longitudinalSub <- function(data_fit_all, long_sub_fixed, long_sub_random) {
     
     # Z design matrix, random effects design matrix
     ffk <- nlme::splitFormula(long_sub_random[[m]], "|")[[1]]
-    Zik[[m]] <- data.frame("id2" = droplevels(data.fit.one[, id]), model.matrix(ffk, data.fit.one))
+    Zik[[m]] <- data.frame("id2" = factor(data.fit.one[[id]]), model.matrix(ffk, data.fit.one))
     
     # Z design matrix (list), list by subjects
     #Zik.list[[m]] <- by(Zik[[m]], c(unlist(Zik[[m]][id])), function(u) {
     #  as.matrix(u[, -1])
     #})
-    Zik.list[[m]] <- by(Zik[[m]], c(Zik[[m]]$id2), function(u) {
+    Zik.list[[m]] <- by(Zik[[m]], Zik[[m]]$id2, function(u) {
       as.matrix(u[, -1])
     })
     
@@ -294,7 +445,7 @@ longitudinalSub <- function(data_fit_all, long_sub_fixed, long_sub_random) {
   
   l <- list(yi = yi, Xi = Xi, Zi = Zi, Zit = Zit, nik = nik, yik = yik,
             Xik.list = Xik.list, Zik.list = Zik.list, XtX.inv = XtX.inv,
-            Xtyi = Xtyi, XtZi = XtZi, p = p, r = r, M = M, n = n, nk = nk)
+            Xtyi = Xtyi, XtZi = XtZi, p = p, r = r, M = M, n = n_subjects(yi), nk = nk)
   
   #variance-covariance matrices without correlation
   #bdiag stands for block diagonal, and it constructs a block diagonal matrix f
@@ -313,27 +464,18 @@ longitudinalSub <- function(data_fit_all, long_sub_fixed, long_sub_random) {
   
   sigma2 <- unlist(lapply(lfit, function(u) u$sigma))^2
   
-  result.solve.D <- tryCatch({
-    solve(D)
-    # code that may produce an error
-  }, error = function(e) {
-    # code to handle the error, such as printing a message
-    message("An error occurred: ", conditionMessage(e))
-    NULL  # return NULL to indicate that an error occurred
+  ### starting value for the joint EM: the block-diagonal D from the
+  ### separate per-biomarker fits, or the identity if that is singular
+  ### (previously reported only as a bare message()).
+  D_start <- tryCatch({ solve(D); D }, error = function(e) {
+    warning(sprintf(paste0(
+      "The random-effects covariance from the separate per-biomarker fits is singular (%s); ",
+      "starting the joint EM from the identity matrix instead. Sigma_fit may be unreliable: ",
+      "consider simplifying the random-effects structure."), conditionMessage(e)), call. = FALSE)
+    diag(1, dim(D)[1])
   })
-  
-  if (!is.null(result.solve.D)) {
-    # code to execute if no error occurs
-    # use the 'result' variable here, if necessary
-    # ...
-    out <- longitudinalSubVar(thetaLong = list("beta" = beta.1, "D" = D, "sigma2" = sigma2),
-                              l = l, tol.em = 1e-04, verbose = FALSE)
-  } else {
-    # code to execute if an error occurs
-    # ...
-    out <- longitudinalSubVar(thetaLong = list("beta" = beta.1, "D" = diag(1, dim(D)[1]), "sigma2" = sigma2),
-                              l = l, tol.em = 1e-04, verbose = FALSE)
-  }
+  out <- longitudinalSubVar(thetaLong = list("beta" = beta.1, "D" = D_start, "sigma2" = sigma2),
+                            l = l, tol.em = 1e-04, verbose = FALSE)
   ###**** need to changed back to Sigma_fit = out$D
   Sigma_fit = out$D
   #Sigma_fit = matrix(0,3,3)
@@ -345,4 +487,99 @@ longitudinalSub <- function(data_fit_all, long_sub_fixed, long_sub_random) {
 
   class(long_fit_all) <- "longitudinalSub.BJM"
   return(long_fit_all)
+}
+
+#' Number of subjects the random-effects covariance is estimated from
+#'
+#' @description The EM update for \code{Sigma_fit} averages each subject's
+#' \eqn{E[b b^T]} over the subjects that are actually in the fit -- those with
+#' at least one complete observation of every biomarker (\code{yi} has one
+#' element per such subject). It used to divide by the number of subjects
+#' in the first biomarker's raw data instead, which underestimated
+#' \code{Sigma_fit} (badly, since EM compounds it over iterations) whenever
+#' some subject was excluded, e.g. one never measured for some biomarker.
+#'
+#' @param yi The per-subject list of stacked responses.
+#' @return The number of subjects.
+#' @keywords internal
+n_subjects <- function(yi) length(yi)
+
+#' Variables a biomarker's sub-model uses
+#'
+#' @description The rows \code{longitudinalSub()} keeps for the joint EM
+#' must be the rows \code{lme()} was fit on, i.e. complete in every
+#' variable of both the fixed- and the random-effects formula (including
+#' the id). Only the fixed-effects variables used to be checked, so a
+#' missing value in a variable used only in \code{long_sub_random} left a
+#' row in the fixed-effects design but not in the random-effects one, and
+#' failed with "arguments imply differing number of rows".
+#'
+#' @param fixed_formula,random_formula The biomarker's
+#'   \code{long_sub_fixed} and \code{long_sub_random} formulas.
+#' @return A character vector of variable names.
+#' @keywords internal
+model_vars <- function(fixed_formula, random_formula) {
+  unique(c(all.vars(fixed_formula), all.vars(random_formula)))
+}
+
+#' Factor levels of the data a biomarker's sub-model was fit on
+#'
+#' @description Used by \code{longitudinalSub()} to cache, per biomarker,
+#' the factor levels seen by \code{lme()} -- computed from the full fitting
+#' data before it is restricted to the subjects retained in the joint fit,
+#' which may lack some levels.
+#'
+#' @param terms_model The fitted model's \code{terms}.
+#' @param data The data the model was fit on.
+#' @param fixed_formula The fixed-effects formula (for its variables).
+#' @return A named list of factor levels, as from \code{.getXlevels()}.
+#' @keywords internal
+training_xlevels <- function(terms_model, data, fixed_formula) {
+  mf <- model.frame(terms_model, data[, all.vars(fixed_formula), drop = FALSE], na.action = na.omit)
+  .getXlevels(terms_model, mf)
+}
+
+
+#' Fit \code{nlme::lme()}, retrying with more optimizer iterations
+#'
+#' @description \code{lme()} with \code{opt = "optim"} stops after
+#' \code{msMaxIter} (default 50) optimizer iterations and then fails with
+#' "optim problem, convergence error code = 1". That happens when a
+#' random-effect variance is close to zero -- e.g. a random slope in
+#' \code{long_sub_random} for data with little slope variation, more often
+#' with few measurements per subject. The call is evaluated as given first,
+#' so a fit that succeeds is exactly what it was before (call included);
+#' only if it fails to converge is it refit with \code{msMaxIter = 1000},
+#' with a warning. If that fails too, the error suggests a simpler
+#' random-effects formula. Errors that are not about convergence are passed
+#' on unchanged, without a retry.
+#'
+#' @param call_expr The \code{nlme::lme(...)} call (unevaluated; evaluated
+#'   in the caller's frame, as if written there).
+#' @param label The biomarker's name, for messages.
+#' @return The \code{lme} fit.
+#' @keywords internal
+lme_with_retry <- function(call_expr, label) {
+  expr <- substitute(call_expr)
+  env <- parent.frame()
+  fit <- tryCatch(eval(expr, env), error = function(e) e)
+  if (!inherits(fit, "error")) return(fit)
+  first_error <- conditionMessage(fit)
+  # any other error (a bad formula, a non-numeric response, ...) is not
+  # about convergence: re-signal it unchanged
+  if (!grepl("optim problem|convergence", first_error)) stop(fit)
+  retry <- expr
+  retry$control <- quote(nlme::lmeControl(opt = "optim", msMaxIter = 1000))
+  fit <- tryCatch(eval(retry, env), error = function(e) e)
+  if (inherits(fit, "error")) {
+    stop(sprintf(paste0(
+      "lme() failed for biomarker `%s`, also when refit with msMaxIter = 1000: %s ",
+      "This usually means a random-effect variance is close to zero; a simpler ",
+      "long_sub_random (e.g. ~ 1 | id) may help."), label, conditionMessage(fit)), call. = FALSE)
+  }
+  warning(sprintf(paste0(
+    "lme() for biomarker `%s` did not converge within its default 50 optimizer iterations (%s); ",
+    "it was refit with msMaxIter = 1000. A random-effect variance may be close to zero."),
+    label, sub("\\s*message\\s*=\\s*$", "", trimws(gsub("\\s+", " ", first_error)))), call. = FALSE)
+  fit
 }

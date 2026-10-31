@@ -43,7 +43,7 @@ test_that("cmtPlot picks the midpoint of time_variable when condi_time2event is 
   cp <- cmtPlot(data_plot_all = pbc3, condi_time2event = NULL,
                 event_type_variable = NULL, event_type = NULL,
                 bio_variable = "serBilir", time_variable = "year",
-                survival_variable = "years", interval_time = 1 / 12)
+                survival_variable = "years", interval_time = 1 / 12, status_variable = "status3")
 
   expect_s3_class(cp, "ggplot")
 })
@@ -57,7 +57,7 @@ test_that("cmtPlot deduplicates by id_variable, not a literal 'id_variable' colu
                 event_type_variable = NULL, event_type = NULL,
                 bio_variable = "serBilir", time_variable = "year",
                 survival_variable = "years", interval_time = 1 / 12,
-                id_variable = "patient_id")
+                id_variable = "patient_id", status_variable = "status3")
 
   expect_s3_class(cp, "ggplot")
 })
@@ -99,12 +99,37 @@ test_that("warn_unsafe_formula_terms does not warn on poly(..., raw = TRUE) or o
   expect_no_warning(warn_unsafe_formula_terms(list(y ~ I(x^2) + log(z + 1) + sqrt(z)), "long_sub_fixed"))
 })
 
-test_that("longitudinalSub warns when long_sub_fixed uses poly()/factor(), whose prediction-time basis silently disagrees with the fitting-time basis", {
+test_that("longitudinalSub does not warn on poly()/factor() in a continuous biomarker's fixed effects, but does in random effects", {
   data(pbc3, envir = environment())
   data_fit_one <- pbc3[pbc3$status3 == 1, ]
 
+  # the training basis is reused for these (see "the EM design reuses ...")
+  expect_no_warning(
+    longitudinalSub(data_fit_one, serBilir ~ poly(year, 2) + age + sex + years, ~ year | id))
   expect_warning(
-    longitudinalSub(data_fit_one, serBilir ~ poly(year, 2) + age + sex + years, ~ year | id),
-    "poly"
-  )
+    longitudinalSub(data_fit_one, serBilir ~ year + age + sex + years, ~ poly(year, 2) | id),
+    "long_sub_random\\[\\[1\\]\\]` uses poly")
+})
+
+test_that("the EM design reuses the training basis of poly()/ns()/factor() terms", {
+  # With some subjects excluded from the joint fit (never measured for
+  # albumin), the EM used to rebuild the basis from the retained subjects
+  # only, so its design no longer matched the coefficients lme() estimated.
+  data(pbc3, envir = environment())
+  d <- pbc3[pbc3$status3 == 1, ]
+  d$albumin[d$id %in% unique(d$id)[1:40]] <- NA
+  fx <- list(serBilir ~ poly(year, 2) + factor(edema) + splines::ns(age, 2) + years,
+             albumin ~ year + age + years)
+  seen <- new.env()
+  orig <- BJM:::longitudinalSubVar
+  testthat::local_mocked_bindings(longitudinalSubVar = function(thetaLong, l, ...) {
+    seen$l <- l
+    orig(thetaLong, l, ...)
+  })
+  fit <- longitudinalSub(d, fx, list(~ year | id, ~ year | id))
+  tt <- fit$lfit[[1]]$terms
+  X_train <- model.matrix(tt, model.frame(tt, d))
+  i <- as.character(unique(d$id)[100])
+  expect_equal(unname(c(seen$l$Xik.list[[1]][[i]])),
+               unname(c(X_train[as.character(d$id) == i, ])))
 })

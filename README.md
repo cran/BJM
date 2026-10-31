@@ -1,6 +1,7 @@
 # BJM
 
 <!-- badges: start -->
+[![pkgdown](https://img.shields.io/badge/docs-pkgdown-blue.svg)](https://wenhaoli18.github.io/BJM/)
 <!-- badges: end -->
 
 BJM fits a *backward joint model* of multivariate longitudinal outcomes
@@ -68,10 +69,10 @@ survival_trans_function <- list(
   fun4 = function(x) abs(x - 7)
 )
 
-data_raw_predict <- pbc3[pbc3$id == 2, ]
+data_raw_predict <- pbc3[pbc3$id == 2 & pbc3$year <= 5, ]
 data_predict_all <- list(data_raw_predict, data_raw_predict)
 
-risk <- dynamicPrediction(
+risk <- predictRisk(
   data_predict_all, long_fit_all, survival_fit_all,
   prediction_time = 5, horizon = 1, time_variable = "year",
   survival_variable_all, survival_trans_function,
@@ -80,7 +81,7 @@ risk <- dynamicPrediction(
 risk
 
 ## 4. Predict a future biomarker value conditional on survival
-bio_pred <- dynamicPredictionBio(
+bio_pred <- predictLongitudinal(
   bio_i = 1, data_predict_all, long_fit_all, survival_fit_all,
   prediction_time = 5, horizon = 1, time_variable = "year",
   survival_variable_all, survival_trans_function,
@@ -99,9 +100,28 @@ repeated list, when all biomarkers share the same measurement data.
 
 `predictPlot()` and `riskPlot()` visualize these predictions for a
 single patient; `cmtPlot()` plots observed longitudinal trajectories
-stratified by eventual outcome.
+stratified by eventual outcome, `spaghettiPlot()` draws every subject's
+trajectory (optionally aligned at the event time), and `cifPlot()` plots
+the cumulative incidence of each event type. `plot()` works on the
+fitted sub-models and on `predictLongitudinal()` results, for model
+diagnostics and predicted biomarker distributions, and `performancePlot()`
+plots the time-dependent AUC and Brier score of the risk predictions
+across landmark times, and `calibrationPlot()` compares predicted with
+observed risks.
 
 For the full walkthrough — including how to choose the `bandcount1`/
 `bandcount2`/`bandcount3` numerical-integration tuning parameters via a
 convergence check, and what the input-validation error messages look
 like — see `vignette("BJM-intro", package = "BJM")`.
+
+## References
+
+- Shen F, Li L (2021). Backward joint model and dynamic prediction of
+  survival with multivariate longitudinal data. *Statistics in Medicine*,
+  40(20), 4395--4409.
+  [doi:10.1002/sim.9037](https://doi.org/10.1002/sim.9037)
+- Li W, Wang S, Yin Z, Astor BC, Yang W, Greene TH, Li L (2026). Backward
+  joint model for the joint dynamic prediction of time-to-event and
+  longitudinal data: basic formulation and new developments. *Lifetime Data
+  Analysis*, 32(3), 46.
+  [doi:10.1007/s10985-026-09725-x](https://link.springer.com/article/10.1007/s10985-026-09725-x)

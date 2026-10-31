@@ -1,5 +1,6 @@
 # -- Internal formatting helper (not exported) ----------------------------------
 .format_survivalSub <- function(x, digits = 4, extended = FALSE) {
+  if (is_interval_censored(x)) return(.format_survivalSub_ic(x, digits, extended))
 
   sep_line  <- paste(rep("=", 65), collapse = "")
   dash_line <- paste(rep("-", 65), collapse = "")
@@ -27,12 +28,16 @@
   cat(sprintf("  Number of subjects        : %d\n", coxph_fit$n))
   cat(sprintf("  Number of events          : %d\n", coxph_fit$nevent))
   if (has_cr) {
-    n_ev   <- nrow(glm_fit$data)
-    n_cr   <- sum(glm_fit$y)
-    cat(sprintf("  Cause-1 events (CR model) : %d\n",
-                as.integer(n_cr)))
-    cat(sprintf("  Cause-2 events (CR model) : %d\n",
-                as.integer(n_ev - n_cr)))
+    ### cause 1 is the event type coded 0 (the first level of a factor),
+    ### cause 2 the one coded 1, as in predictRisk()'s risk_prob_1/risk_prob_2
+    ### (they used to be printed the other way round)
+    resp <- glm_fit$model[[1]]
+    type_labels <- if (is.factor(resp)) levels(resp)[1:2] else c("0", "1")
+    type_name <- deparse(glm_form[[2]])
+    cat(sprintf("  Cause-1 events (%s = %s) : %d\n", type_name, type_labels[1],
+                as.integer(sum(glm_fit$y == 0))))
+    cat(sprintf("  Cause-2 events (%s = %s) : %d\n", type_name, type_labels[2],
+                as.integer(sum(glm_fit$y == 1))))
   }
 
   # -- Marginal Survival Sub-model ---------------------------------------
@@ -116,6 +121,67 @@
 }
 
 
+# -- Interval-censored survival sub-model (not exported) -------------------------
+icph_coef_table <- function(ic_fit) {
+  b <- ic_fit$coefficients
+  se <- sqrt(diag(ic_fit$var))
+  z <- b / se
+  cbind(Coef = b, `exp(Coef)` = exp(b), SE = se, z = z,
+        `p-value` = 2 * stats::pnorm(-abs(z)))
+}
+
+.format_survivalSub_ic <- function(x, digits = 4, extended = FALSE) {
+  sep_line  <- paste(rep("=", 65), collapse = "")
+  dash_line <- paste(rep("-", 65), collapse = "")
+  ic <- x$ic_fit
+
+  cat("\nCall:\n")
+  cat(sprintf("survivalSub(form_marginal_surv = %s,\n            event_time = \"%s\")\n",
+              deparse(x$form_marginal_surv, width.cutoff = 50L), ic$event_time))
+  cat("\nData Descriptives:\n")
+  cat(sprintf("  Number of subjects        : %d\n", ic$n))
+  cat(sprintf("  Interval-censored         : %d\n", ic$n_interval))
+  cat(sprintf("  Exactly observed          : %d\n", ic$n_exact))
+  cat(sprintf("  Right-censored            : %d\n", ic$n_right))
+  n_events <- ic$n_interval + ic$n_exact
+  cat(sprintf("  Events before first visit : %d (%.0f%% of events)\n", ic$n_before_first_visit,
+              if (n_events > 0) 100 * ic$n_before_first_visit / n_events else 0))
+
+  cat("\n", sep_line, "\n", sep = "")
+  cat(sprintf(" Marginal Survival Sub-model  [PH, %s baseline, interval-censored]\n",
+              if (ic$baseline == "spline") sprintf("spline (df = %d)", ic$df) else "piecewise-constant"))
+  cat(dash_line, "\n", sep = "")
+  cat(" Formula: ")
+  print(x$form_marginal_surv)
+  cat("\n")
+  if (length(ic$coefficients) > 0) {
+    stats::printCoefmat(icph_coef_table(ic), digits = digits, P.values = TRUE, has.Pvalue = TRUE,
+                        signif.stars = getOption("show.signif.stars"), cs.ind = 1:3, tst.ind = 4)
+  }
+  cat(sprintf("\n  Log-likelihood    = %.2f\n", ic$loglik))
+  if (!is.null(ic$strata_levels)) {
+    cat(sprintf("  Strata            : %s (separate baseline hazards)\n",
+                paste(ic$strata_levels, collapse = ", ")))
+  }
+  bases <- if (!is.null(ic$bases)) ic$bases else list(ic$base)
+  gammas <- if (!is.null(ic$gammas)) ic$gammas else list(ic$gamma)
+  for (h in seq_along(bases)) {
+    label <- if (is.null(ic$strata_levels)) "" else sprintf(" [%s]", ic$strata_levels[h])
+    if (extended && ic$baseline == "spline") {
+      cat(sprintf("  Spline knots (time scale)%s:", label),
+          paste(signif(bases[[h]]$knot_times, digits), collapse = ", "), "\n")
+    }
+    if (extended && ic$baseline == "piecewise") {
+      finite_cuts <- bases[[h]]$cuts[is.finite(bases[[h]]$cuts)]
+      cat(sprintf("  Baseline hazard by piece%s:\n", label))
+      print(data.frame(from = finite_cuts, to = c(finite_cuts[-1], Inf),
+                       hazard = signif(exp(gammas[[h]]), digits)), row.names = FALSE)
+    }
+  }
+  cat(sep_line, "\n\n", sep = "")
+}
+
+
 #' Print method for \code{survivalSub.BJM} objects
 #'
 #' Automatically called when you type \code{survival_fit_all} or
@@ -137,6 +203,7 @@
 #'                                  form_marginal_surv, form_conditional_cr)
 #' survival_fit_all   # triggers print.survivalSub.BJM automatically
 #'
+#' @keywords internal
 #' @export
 print.survivalSub.BJM <- function(x, digits = 4, ...) {
   .format_survivalSub(x, digits = digits, extended = FALSE)
@@ -166,14 +233,16 @@ print.survivalSub.BJM <- function(x, digits = 4, ...) {
 #'                                  form_marginal_surv, form_conditional_cr)
 #' summary(survival_fit_all)
 #'
+#' @keywords internal
 #' @export
 summary.survivalSub.BJM <- function(object, digits = 4, ...) {
   .format_survivalSub(object, digits = digits, extended = TRUE)
 
   out <- list(
-    cox_summary = summary(object$coxph_fit),
+    cox_summary = if (!is_interval_censored(object)) summary(object$coxph_fit),
     glm_summary = if (!is.null(object$glm_fit)) summary(object$glm_fit) else NULL
   )
+  if (is_interval_censored(object)) out$ic_coefficients <- icph_coef_table(object$ic_fit)
   class(out) <- "summary.survivalSub.BJM"
   invisible(out)
 }
@@ -189,6 +258,11 @@ summary.survivalSub.BJM <- function(object, digits = 4, ...) {
   Sigma_fit    <- x$Sigma_fit
   long_sub_fixed <- x$long_sub_fixed
   M            <- length(lfit)
+  ### biomarker_type is only present on fits from longitudinalSubCopula();
+  ### absent (NULL) means every biomarker is continuous, i.e. every lfit[[m]]
+  ### is an nlme::lme object, exactly as before biomarker_type existed.
+  biomarker_type <- x$biomarker_type
+  if (is.null(biomarker_type)) biomarker_type <- rep("continuous", M)
 
   cat("\n")
   cat("Call:\n")
@@ -200,8 +274,13 @@ summary.survivalSub.BJM <- function(object, digits = 4, ...) {
     for (m in seq_len(M)) {
       nm <- if (!is.null(names(long_sub_fixed)[m]) && names(long_sub_fixed)[m] != "")
               names(long_sub_fixed)[m] else paste0("Outcome ", m)
-      n_subj <- lfit[[m]]$dims$ngrps[1]
-      n_obs  <- lfit[[m]]$dims$N
+      if (biomarker_type[m] == "continuous") {
+        n_subj <- lfit[[m]]$dims$ngrps[1]
+        n_obs  <- lfit[[m]]$dims$N
+      } else {
+        n_subj <- unname(lfit[[m]]$dims$nlev.re[1])
+        n_obs  <- lfit[[m]]$dims$nobs
+      }
       cat(sprintf("  [%d] %-15s  subjects = %d,  observations = %d\n",
                   m, nm, n_subj, n_obs))
     }
@@ -217,35 +296,70 @@ summary.survivalSub.BJM <- function(object, digits = 4, ...) {
                 names(long_sub_fixed)[m] else paste0("Outcome ", m)
 
     cat(dash_line, "\n", sep = "")
-    cat(sprintf(" [%d] %s\n", m, nm))
+    cat(sprintf(" [%d] %s (%s)\n", m, nm, biomarker_type[m]))
     cat(" Formula: ")
     print(form_m)
     cat("\n")
 
-    fe   <- nlme::fixef(fit_m)
-    se   <- sqrt(diag(fit_m$varFix))
-    tval <- fe / se
-    pval <- 2 * stats::pt(abs(tval), df = fit_m$fixDF$terms[1], lower.tail = FALSE)
-    tab_fe <- cbind(Value = fe, SE = se, t = tval, "p-value" = pval)
-    stats::printCoefmat(tab_fe,
-                 digits       = digits,
-                 P.values     = TRUE,
-                 has.Pvalue   = TRUE,
-                 signif.stars = getOption("show.signif.stars"),
-                 cs.ind       = 1:2,
-                 tst.ind      = 3)
+    if (biomarker_type[m] == "continuous") {
+      fe   <- nlme::fixef(fit_m)
+      se   <- sqrt(diag(fit_m$varFix))
+      tval <- fe / se
+      pval <- 2 * stats::pt(abs(tval), df = fit_m$fixDF$terms[1], lower.tail = FALSE)
+      tab_fe <- cbind(Value = fe, SE = se, t = tval, "p-value" = pval)
+      stats::printCoefmat(tab_fe,
+                   digits       = digits,
+                   P.values     = TRUE,
+                   has.Pvalue   = TRUE,
+                   signif.stars = getOption("show.signif.stars"),
+                   cs.ind       = 1:2,
+                   tst.ind      = 3)
 
-    cat("\n")
-    cat(sprintf("  Residual std. error (sigma): %.4f\n", fit_m$sigma))
-    cat(sprintf("  n (subjects) = %d,  N (observations) = %d\n",
-                fit_m$dims$ngrps[1], fit_m$dims$N))
-    cat(sprintf("  Log-likelihood: %.2f\n", stats::logLik(fit_m)[1]))
-    cat(sprintf("  AIC: %.2f,  BIC: %.2f\n", stats::AIC(fit_m), stats::BIC(fit_m)))
+      cat("\n")
+      cat(sprintf("  Residual std. error (sigma): %.4f\n", fit_m$sigma))
+      cat(sprintf("  n (subjects) = %d,  N (observations) = %d\n",
+                  fit_m$dims$ngrps[1], fit_m$dims$N))
+      cat(sprintf("  Log-likelihood: %.2f\n", stats::logLik(fit_m)[1]))
+      cat(sprintf("  AIC: %.2f,  BIC: %.2f\n", stats::AIC(fit_m), stats::BIC(fit_m)))
 
-    if (extended) {
-      vc <- nlme::getVarCov(fit_m)
-      cat("\n  Random-effects variance-covariance (subject level):\n")
-      print(round(vc, digits))
+      if (extended) {
+        vc <- nlme::getVarCov(fit_m)
+        cat("\n  Random-effects variance-covariance (subject level):\n")
+        print(round(vc, digits))
+      }
+    } else {
+      ### Ordinal biomarker: fit_m is an ordinal::clmm object (probit
+      ### cumulative link mixed model). Its fixed effects (fit_m$beta) omit
+      ### an intercept by construction -- absorbed into the cumulative
+      ### thresholds (fit_m$alpha) instead -- so thresholds are reported
+      ### alongside, not folded into the same coefficient table.
+      fe   <- fit_m$beta
+      se   <- sqrt(diag(stats::vcov(fit_m))[names(fe)])
+      zval <- fe / se
+      pval <- 2 * stats::pnorm(abs(zval), lower.tail = FALSE)
+      tab_fe <- cbind(Value = fe, SE = se, z = zval, "p-value" = pval)
+      stats::printCoefmat(tab_fe,
+                   digits       = digits,
+                   P.values     = TRUE,
+                   has.Pvalue   = TRUE,
+                   signif.stars = getOption("show.signif.stars"),
+                   cs.ind       = 1:2,
+                   tst.ind      = 3)
+
+      cat("\n  Cumulative thresholds (probit link):\n")
+      print(round(fit_m$alpha, digits))
+
+      cat("\n")
+      cat(sprintf("  n (subjects) = %d,  N (observations) = %d\n",
+                  unname(fit_m$dims$nlev.re[1]), fit_m$dims$nobs))
+      cat(sprintf("  Log-likelihood: %.2f\n", stats::logLik(fit_m)[1]))
+      cat(sprintf("  AIC: %.2f,  BIC: %.2f\n", stats::AIC(fit_m), stats::BIC(fit_m)))
+
+      if (extended) {
+        vc <- nlme::VarCorr(fit_m)[[1]]
+        cat("\n  Random-effects variance-covariance (subject level):\n")
+        print(round(vc, digits))
+      }
     }
     cat("\n")
   }
@@ -275,6 +389,7 @@ summary.survivalSub.BJM <- function(object, digits = 4, ...) {
 #' @param digits Number of significant digits. Default is 4.
 #' @param ... Additional arguments (currently unused).
 #' @return Invisibly returns \code{x}.
+#' @keywords internal
 #' @export
 print.longitudinalSub.BJM <- function(x, digits = 4, ...) {
   .format_longitudinalSub(x, digits = digits, extended = FALSE)
@@ -291,6 +406,7 @@ print.longitudinalSub.BJM <- function(x, digits = 4, ...) {
 #' @param digits Number of significant digits. Default is 4.
 #' @param ... Additional arguments (currently unused).
 #' @return Invisibly returns a list of per-outcome \code{summary.lme} objects.
+#' @keywords internal
 #' @export
 summary.longitudinalSub.BJM <- function(object, digits = 4, ...) {
   .format_longitudinalSub(object, digits = digits, extended = TRUE)
@@ -300,20 +416,10 @@ summary.longitudinalSub.BJM <- function(object, digits = 4, ...) {
 }
 
 
-#' Print both sub-models of a fitted backward joint model
-#'
-#' Convenience function that prints the longitudinal and survival
-#' sub-model summaries together. Unlike \code{print.longitudinalSub.BJM}
-#' and \code{print.survivalSub.BJM}, this does not dispatch on a single
-#' \code{"BJM"}-classed object, because \code{\link{longitudinalSub}} and
-#' \code{\link{survivalSub}} are fit and returned separately; it simply
-#' prints both fit objects you already have.
-#'
-#' @param long_fit_all Output from \code{\link{longitudinalSub}}.
-#' @param survival_fit_all Output from \code{\link{survivalSub}}.
-#' @param digits Number of significant digits. Default is 4.
-#' @return Invisibly returns a named list with both fit objects.
-#' @export
+# -- Internal convenience wrapper: prints both sub-model fits together (not
+# exported; long_fit_all and survival_fit_all already auto-print themselves
+# via print.longitudinalSub.BJM/print.survivalSub.BJM, so this saves callers
+# who have both objects on hand one line -- not a distinct public capability) --
 printBJM <- function(long_fit_all, survival_fit_all, digits = 4) {
   cat("\n")
   cat("Backward Joint Model (BJM) - Model Summary\n")
@@ -324,8 +430,8 @@ printBJM <- function(long_fit_all, survival_fit_all, digits = 4) {
 }
 
 
-# -- Internal formatting helper for dynamicPrediction (not exported) ------------
-.format_dynamicPrediction <- function(x, digits = 4,
+# -- Internal formatting helper for predictRisk (not exported) ------------
+.format_predictRisk <- function(x, digits = 4,
                                       prediction_time = NULL,
                                       horizon = NULL,
                                       subject_ids = NULL,
@@ -339,6 +445,7 @@ printBJM <- function(long_fit_all, survival_fit_all, digits = 4) {
   has_cr <- !is.null(risk1)
   n_subj <- length(risk0)
   ids    <- if (!is.null(subject_ids)) as.character(subject_ids) else
+            if (!is.null(names(risk0))) names(risk0) else
               paste0("S", seq_len(n_subj))
 
   cat("\n", sep_line, "\n", sep = "")
@@ -360,7 +467,16 @@ printBJM <- function(long_fit_all, survival_fit_all, digits = 4) {
                       Risk_Prob = round(risk0, digits),
                       stringsAsFactors = FALSE)
     colnames(tab) <- c("Subject", "Risk Prob")
+    if (!is.null(x$prob_undetected_1)) {
+      # interval-censored fit: see predictRisk()'s Value section
+      tab[["Already, undetected"]] <- round(x$prob_undetected_1, digits)
+    }
     print(tab, row.names = FALSE, right = TRUE)
+    if (!is.null(x$prob_undetected_1)) {
+      cat("\n  Interval-censored: risks condition on being event-free at each subject's\n",
+          " last visit; 'Already, undetected' is the probability the event happened\n",
+          " between that visit and the prediction time.\n", sep = "")
+    }
   } else {
     tab <- data.frame(Subject = ids,
                       Risk0   = round(risk0, digits),
@@ -368,7 +484,16 @@ printBJM <- function(long_fit_all, survival_fit_all, digits = 4) {
                       Total   = round(risk0 + risk1, digits),
                       stringsAsFactors = FALSE)
     colnames(tab) <- c("Subject", "Cause 1 Risk", "Cause 2 Risk", "Total Risk")
+    if (!is.null(x$prob_undetected_1)) {
+      tab[["Cause 1 undetected"]] <- round(x$prob_undetected_1, digits)
+      tab[["Cause 2 undetected"]] <- round(x$prob_undetected_2, digits)
+    }
     print(tab, row.names = FALSE, right = TRUE)
+    if (!is.null(x$prob_undetected_1)) {
+      cat("\n  Interval-censored: risks condition on being event-free at each subject's\n",
+          " last visit; 'undetected' is the probability that event happened between\n",
+          " that visit and the prediction time.\n", sep = "")
+    }
   }
 
   if (extended) {
@@ -378,7 +503,7 @@ printBJM <- function(long_fit_all, survival_fit_all, digits = 4) {
     cat(dash_line, "\n", sep = "")
     if (!has_cr) {
       cat(sprintf("  Mean : %.4f\n", mean(risk0, na.rm = TRUE)))
-      cat(sprintf("  SD   : %.4f\n", stats::sd(risk0,   na.rm = TRUE)))
+      cat(sprintf("  SD   : %s\n", format_sd(risk0)))
       cat(sprintf("  Min / Max : %.4f / %.4f\n",
                   min(risk0, na.rm = TRUE), max(risk0, na.rm = TRUE)))
     } else {
@@ -386,10 +511,8 @@ printBJM <- function(long_fit_all, survival_fit_all, digits = 4) {
                   mean(risk0, na.rm = TRUE),
                   mean(risk1, na.rm = TRUE),
                   mean(risk0 + risk1, na.rm = TRUE)))
-      cat(sprintf("  SD   (Cause 1 / Cause 2 / Total): %.4f / %.4f / %.4f\n",
-                  stats::sd(risk0, na.rm = TRUE),
-                  stats::sd(risk1, na.rm = TRUE),
-                  stats::sd(risk0 + risk1, na.rm = TRUE)))
+      cat(sprintf("  SD   (Cause 1 / Cause 2 / Total): %s / %s / %s\n",
+                  format_sd(risk0), format_sd(risk1), format_sd(risk0 + risk1)))
     }
   }
 
@@ -397,24 +520,25 @@ printBJM <- function(long_fit_all, survival_fit_all, digits = 4) {
 }
 
 
-#' Print method for \code{dynamicPrediction.BJM} objects
+#' Print method for \code{predictRisk.BJM} objects
 #'
-#' Automatically called when you type the result of \code{dynamicPrediction()}
+#' Automatically called when you type the result of \code{predictRisk()}
 #' at the console.
 #'
-#' @param x A \code{dynamicPrediction.BJM} object.
+#' @param x A \code{predictRisk.BJM} object.
 #' @param prediction_time Landmark time (for display). Default \code{NULL}.
 #' @param horizon Prediction horizon (for display). Default \code{NULL}.
 #' @param subject_ids Optional subject ID labels.
 #' @param digits Decimal places. Default 4.
 #' @param ... Additional arguments (currently unused).
 #' @return Invisibly returns \code{x}.
+#' @keywords internal
 #' @export
-print.dynamicPrediction.BJM <- function(x, prediction_time = NULL,
+print.predictRisk.BJM <- function(x, prediction_time = NULL,
                                         horizon = NULL,
                                         subject_ids = NULL,
                                         digits = 4, ...) {
-  .format_dynamicPrediction(x, digits = digits,
+  .format_predictRisk(x, digits = digits,
                              prediction_time = prediction_time,
                              horizon = horizon,
                              subject_ids = subject_ids,
@@ -423,23 +547,24 @@ print.dynamicPrediction.BJM <- function(x, prediction_time = NULL,
 }
 
 
-#' Summary method for \code{dynamicPrediction.BJM} objects
+#' Summary method for \code{predictRisk.BJM} objects
 #'
 #' Like \code{print} but also shows mean, SD, and range of predicted risks.
 #'
-#' @param object A \code{dynamicPrediction.BJM} object.
+#' @param object A \code{predictRisk.BJM} object.
 #' @param prediction_time Landmark time (for display). Default \code{NULL}.
 #' @param horizon Prediction horizon (for display). Default \code{NULL}.
 #' @param subject_ids Optional subject ID labels.
 #' @param digits Decimal places. Default 4.
 #' @param ... Additional arguments (currently unused).
 #' @return Invisibly returns \code{object}.
+#' @keywords internal
 #' @export
-summary.dynamicPrediction.BJM <- function(object, prediction_time = NULL,
+summary.predictRisk.BJM <- function(object, prediction_time = NULL,
                                           horizon = NULL,
                                           subject_ids = NULL,
                                           digits = 4, ...) {
-  .format_dynamicPrediction(object, digits = digits,
+  .format_predictRisk(object, digits = digits,
                              prediction_time = prediction_time,
                              horizon = horizon,
                              subject_ids = subject_ids,
@@ -448,14 +573,14 @@ summary.dynamicPrediction.BJM <- function(object, prediction_time = NULL,
 }
 
 
-# -- Internal formatting helper for dynamicPredictionBio (not exported) ---------
-.format_dynamicPredictionBio <- function(x, digits = 4,
-                                         bio_i = NULL,
-                                         long_fit_all = NULL,
-                                         prediction_time = NULL,
-                                         horizon = NULL,
-                                         subject_ids = NULL,
-                                         extended = FALSE) {
+# -- Internal formatting helper for predictLongitudinal (not exported) ----------
+.format_predictLongitudinal <- function(x, digits = 4,
+                                        bio_i = NULL,
+                                        long_fit_all = NULL,
+                                        prediction_time = NULL,
+                                        horizon = NULL,
+                                        subject_ids = NULL,
+                                        extended = FALSE) {
 
   sep_line  <- paste(rep("=", 65), collapse = "")
   dash_line <- paste(rep("-", 65), collapse = "")
@@ -465,6 +590,7 @@ summary.dynamicPrediction.BJM <- function(object, prediction_time = NULL,
   Y_all     <- x$Y_all
   n_subj    <- length(Y_predict)
   ids       <- if (!is.null(subject_ids)) as.character(subject_ids) else
+               if (!is.null(names(Y_predict))) names(Y_predict) else
                  paste0("S", seq_len(n_subj))
 
   bio_name <- if (!is.null(bio_i) && !is.null(long_fit_all)) {
@@ -483,6 +609,30 @@ summary.dynamicPrediction.BJM <- function(object, prediction_time = NULL,
     cat(sprintf("  Prediction horizon: %g\n", horizon))
   if (!is.null(prediction_time) && !is.null(horizon))
     cat(sprintf("  Predicted at      : t = %g\n", prediction_time + horizon))
+  ### an ordinal biomarker: its "grid" is the categories, and the density
+  ### their probabilities, so a mean or SD of the category codes means
+  ### nothing -- the probability of each category is shown instead
+  category_labels <- attr(Y_all, "category_labels")
+  if (!is.null(category_labels)) {
+    cat(sprintf("  Categories        : %d\n", length(category_labels)))
+    cat(sprintf("  Subjects          : %d\n", n_subj))
+    cat(dash_line, "\n\n", sep = "")
+    probs <- sweep(Y_density, 2, pmax(colSums(Y_density), 1e-300), "/")
+    tab <- data.frame(Subject = ids, t(round(probs, digits)),
+                      Most.likely = category_labels[Y_predict],
+                      check.names = FALSE, stringsAsFactors = FALSE)
+    names(tab)[1 + seq_along(category_labels)] <- paste0("P(", category_labels, ")")
+    print(tab, row.names = FALSE, right = TRUE)
+    cat("\n  P(.) = predicted probability of each category; Most.likely = its mode.\n")
+    if (extended) {
+      cat("\n", dash_line, "\n", sep = "")
+      cat(" Mean predicted probabilities (across subjects)\n")
+      cat(dash_line, "\n", sep = "")
+      print(stats::setNames(round(rowMeans(probs), digits), category_labels))
+    }
+    cat("\n", sep_line, "\n\n", sep = "")
+    return(invisible(NULL))
+  }
   cat(sprintf("  Y grid range      : [%.4g, %.4g]  (%d points)\n",
               min(Y_all), max(Y_all), length(Y_all)))
   cat(sprintf("  Subjects          : %d\n", n_subj))
@@ -524,13 +674,13 @@ summary.dynamicPrediction.BJM <- function(object, prediction_time = NULL,
     cat(dash_line, "\n", sep = "")
     cat(" Predictive Distribution Summary (across subjects)\n")
     cat(dash_line, "\n", sep = "")
-    cat(sprintf("  MAP       - Mean (SD): %.4f (%.4f),  Range: [%.4f, %.4f]\n",
-                mean(Y_predict, na.rm = TRUE), stats::sd(Y_predict, na.rm = TRUE),
+    cat(sprintf("  MAP       - Mean (SD): %.4f (%s),  Range: [%.4f, %.4f]\n",
+                mean(Y_predict, na.rm = TRUE), format_sd(Y_predict),
                 min(Y_predict,  na.rm = TRUE), max(Y_predict, na.rm = TRUE)))
-    cat(sprintf("  Post.Mean - Mean (SD): %.4f (%.4f)\n",
-                mean(stats_mat[, "Mean"]), stats::sd(stats_mat[, "Mean"])))
-    cat(sprintf("  Post.SD   - Mean (SD): %.4f (%.4f)\n",
-                mean(stats_mat[, "SD"]),   stats::sd(stats_mat[, "SD"])))
+    cat(sprintf("  Post.Mean - Mean (SD): %.4f (%s)\n",
+                mean(stats_mat[, "Mean"]), format_sd(stats_mat[, "Mean"])))
+    cat(sprintf("  Post.SD   - Mean (SD): %.4f (%s)\n",
+                mean(stats_mat[, "SD"]),   format_sd(stats_mat[, "SD"])))
     cat(sprintf("  95%% CI width - Mean: %.4f\n",
                 mean(stats_mat[, "Upper"] - stats_mat[, "Lower"])))
   }
@@ -539,12 +689,13 @@ summary.dynamicPrediction.BJM <- function(object, prediction_time = NULL,
 }
 
 
-#' Print method for \code{dynamicPredictionBio.BJM} objects
+#' Print method for \code{predictLongitudinal.BJM} objects
 #'
-#' Automatically called when you type the result of \code{dynamicPredictionBio()}
-#' at the console.
+#' Automatically called when you type the result of
+#' \code{\link{predictLongitudinal}()} (with a single \code{bio_i}) at the
+#' console.
 #'
-#' @param x A \code{dynamicPredictionBio.BJM} object.
+#' @param x A \code{predictLongitudinal.BJM} object.
 #' @param bio_i Biomarker index (for label lookup). Default \code{NULL}.
 #' @param long_fit_all \code{longitudinalSub.BJM} object for name lookup.
 #' @param prediction_time Landmark time (for display). Default \code{NULL}.
@@ -553,29 +704,30 @@ summary.dynamicPrediction.BJM <- function(object, prediction_time = NULL,
 #' @param digits Decimal places. Default 4.
 #' @param ... Additional arguments (currently unused).
 #' @return Invisibly returns \code{x}.
+#' @keywords internal
 #' @export
-print.dynamicPredictionBio.BJM <- function(x, bio_i = NULL,
-                                            long_fit_all = NULL,
-                                            prediction_time = NULL,
-                                            horizon = NULL,
-                                            subject_ids = NULL,
-                                            digits = 4, ...) {
-  .format_dynamicPredictionBio(x, digits = digits,
-                                bio_i = bio_i,
-                                long_fit_all = long_fit_all,
-                                prediction_time = prediction_time,
-                                horizon = horizon,
-                                subject_ids = subject_ids,
-                                extended = FALSE)
+print.predictLongitudinal.BJM <- function(x, bio_i = NULL,
+                                          long_fit_all = NULL,
+                                          prediction_time = NULL,
+                                          horizon = NULL,
+                                          subject_ids = NULL,
+                                          digits = 4, ...) {
+  .format_predictLongitudinal(x, digits = digits,
+                              bio_i = bio_i,
+                              long_fit_all = long_fit_all,
+                              prediction_time = prediction_time,
+                              horizon = horizon,
+                              subject_ids = subject_ids,
+                              extended = FALSE)
   invisible(x)
 }
 
 
-#' Summary method for \code{dynamicPredictionBio.BJM} objects
+#' Summary method for \code{predictLongitudinal.BJM} objects
 #'
 #' Like \code{print} but also shows distribution-level summaries across subjects.
 #'
-#' @param object A \code{dynamicPredictionBio.BJM} object.
+#' @param object A \code{predictLongitudinal.BJM} object.
 #' @param bio_i Biomarker index (for label lookup). Default \code{NULL}.
 #' @param long_fit_all \code{longitudinalSub.BJM} object for name lookup.
 #' @param prediction_time Landmark time (for display). Default \code{NULL}.
@@ -584,19 +736,47 @@ print.dynamicPredictionBio.BJM <- function(x, bio_i = NULL,
 #' @param digits Decimal places. Default 4.
 #' @param ... Additional arguments (currently unused).
 #' @return Invisibly returns \code{object}.
+#' @keywords internal
 #' @export
-summary.dynamicPredictionBio.BJM <- function(object, bio_i = NULL,
-                                              long_fit_all = NULL,
-                                              prediction_time = NULL,
-                                              horizon = NULL,
-                                              subject_ids = NULL,
-                                              digits = 4, ...) {
-  .format_dynamicPredictionBio(object, digits = digits,
-                                bio_i = bio_i,
-                                long_fit_all = long_fit_all,
-                                prediction_time = prediction_time,
-                                horizon = horizon,
-                                subject_ids = subject_ids,
-                                extended = TRUE)
+summary.predictLongitudinal.BJM <- function(object, bio_i = NULL,
+                                            long_fit_all = NULL,
+                                            prediction_time = NULL,
+                                            horizon = NULL,
+                                            subject_ids = NULL,
+                                            digits = 4, ...) {
+  .format_predictLongitudinal(object, digits = digits,
+                              bio_i = bio_i,
+                              long_fit_all = long_fit_all,
+                              prediction_time = prediction_time,
+                              horizon = horizon,
+                              subject_ids = subject_ids,
+                              extended = TRUE)
   invisible(object)
+}
+
+
+#' Print method for \code{predictLongitudinalAll.BJM} objects
+#'
+#' Called when you print the result of \code{\link{predictLongitudinal}()}
+#' with several biomarkers (\code{bio_i} naming more than one, or
+#' \code{NULL}): prints each biomarker's prediction in turn, under its name.
+#'
+#' @param x A \code{predictLongitudinalAll.BJM} object.
+#' @param ... Passed to \code{print.predictLongitudinal.BJM()}.
+#' @return Invisibly returns \code{x}.
+#' @keywords internal
+#' @export
+print.predictLongitudinalAll.BJM <- function(x, ...) {
+  for (k in seq_along(x)) {
+    cat(sprintf("\n[%s]", names(x)[k]))
+    print(x[[k]], ...)
+  }
+  invisible(x)
+}
+
+# SD across subjects for the summary() methods: "-" when it is undefined
+# (a single subject) instead of printing NA
+format_sd <- function(x) {
+  out <- stats::sd(x, na.rm = TRUE)
+  if (is.na(out)) "-" else sprintf("%.4f", out)
 }

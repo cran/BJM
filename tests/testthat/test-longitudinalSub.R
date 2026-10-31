@@ -41,3 +41,175 @@ test_that("print and summary methods run without error", {
   expect_output(print(fit), "Longitudinal Sub-model")
   expect_output(summary(fit), "Correlations")
 })
+
+test_that("longitudinalSub accepts numeric and character patient ids", {
+  data(pbc3, envir = environment())
+  data.fit <- pbc3[pbc3$status3 == 1, ]
+  long_sub_fixed <- list(serBilir ~ year + age + sex, albumin ~ year + age + sex)
+  long_sub_random <- list(~ year | id, ~ year | id)
+  ref <- longitudinalSub(data.fit, long_sub_fixed, long_sub_random)
+
+  for (id_type in c("numeric", "character")) {
+    d <- data.fit
+    d$id <- as(as.character(d$id), id_type)
+    fit <- longitudinalSub(d, long_sub_fixed, long_sub_random)
+    expect_equal(fit$Sigma_fit, ref$Sigma_fit, ignore_attr = TRUE)
+  }
+})
+
+test_that("biomarkers may have different random-effects structures", {
+  data(pbc3, envir = environment())
+  data.fit <- pbc3[pbc3$status3 == 1, ]
+  fit <- longitudinalSub(data.fit,
+                         list(serBilir ~ year + age + sex, albumin ~ year + age + sex),
+                         list(~ 1 | id, ~ year | id))
+  # random intercept for marker 1 + intercept and slope for marker 2
+  expect_equal(dim(fit$Sigma_fit), c(3, 3))
+})
+
+test_that("Sigma_fit averages over the subjects actually retained in the fit", {
+  # 50 subjects never have albumin, so they are excluded from the joint fit.
+  # At EM convergence Sigma_fit must equal the mean, over the *retained*
+  # subjects, of each subject's posterior E[b b^T] -- computed here by hand
+  # from the returned fit. It used to divide by all 169 subjects in the
+  # first biomarker's data instead, underestimating Sigma_fit several-fold.
+  data(pbc3, envir = environment())
+  d <- pbc3[pbc3$status3 == 1, ]
+  set.seed(1)
+  never <- sample(unique(as.character(d$id)), 50)
+  d$albumin[d$id %in% never] <- NA
+  long_sub_fixed <- list(serBilir ~ year + age + sex, albumin ~ year + age + sex)
+  fit <- longitudinalSub(d, long_sub_fixed, list(~ year | id, ~ year | id))
+
+  D <- fit$Sigma_fit
+  beta <- lapply(fit$lfit, nlme::fixef)
+  sigma2 <- vapply(fit$lfit, function(u) u$sigma^2, numeric(1))
+  retained <- setdiff(unique(as.character(d$id)), never)
+  expect_length(retained, 119)
+
+  EbbT <- lapply(retained, function(i) {
+    rows <- lapply(long_sub_fixed, function(f) {
+      di <- d[d$id == i, ]
+      di[stats::complete.cases(di[all.vars(f)]), ]
+    })
+    y <- unlist(Map(function(f, di) di[[all.vars(f)[1]]], long_sub_fixed, rows))
+    X <- as.matrix(Matrix::bdiag(Map(function(f, di) model.matrix(f, di), long_sub_fixed, rows)))
+    Z <- as.matrix(Matrix::bdiag(lapply(rows, function(di) cbind(1, di$year))))
+    S_inv <- diag(rep(1 / sigma2, vapply(rows, nrow, numeric(1))))
+    A <- solve(t(Z) %*% S_inv %*% Z + solve(D))
+    Eb <- A %*% t(Z) %*% S_inv %*% (y - X %*% unlist(beta))
+    A + Eb %*% t(Eb)
+  })
+  expect_equal(unname(D), unname(Reduce(`+`, EbbT) / length(retained)), tolerance = 1e-3)
+})
+
+test_that("the joint EM stops at max.iter, and a singular covariance is reported", {
+  data(pbc3, envir = environment())
+  d <- pbc3[pbc3$status3 == 1, ]
+  seen <- new.env()
+  orig <- BJM:::longitudinalSubVar
+  testthat::local_mocked_bindings(longitudinalSubVar = function(thetaLong, l, ...) {
+    seen$theta <- thetaLong
+    seen$l <- l
+    orig(thetaLong, l, ...)
+  })
+  longitudinalSub(d, list(serBilir ~ year, albumin ~ year), list(~ year | id, ~ year | id))
+
+  expect_warning(orig(seen$theta, seen$l, tol.em = 1e-12, verbose = FALSE, max.iter = 2),
+                 "did not converge within 2 iterations")
+  singular <- seen$theta
+  singular$D[] <- 0
+  msgs <- character()
+  withCallingHandlers(orig(singular, seen$l, tol.em = 1e-4, verbose = FALSE, max.iter = 3),
+                      warning = function(w) {
+                        msgs <<- c(msgs, conditionMessage(w))
+                        invokeRestart("muffleWarning")
+                      })
+  expect_true(any(grepl("became singular", msgs)))
+})
+
+test_that("a missing value in a variable used only in long_sub_random drops that row", {
+  data(pbc3, envir = environment())
+  d <- pbc3[pbc3$status3 == 1, ]
+  d$visit_time <- d$year
+  d$visit_time[c(5, 50, 300)] <- NA
+  # this used to fail with "arguments imply differing number of rows"
+  with_na <- longitudinalSub(d, serBilir ~ year + age + years, ~ visit_time | id)
+  dropped <- longitudinalSub(d[!is.na(d$visit_time), ], serBilir ~ year + age + years, ~ visit_time | id)
+  expect_equal(with_na$Sigma_fit, dropped$Sigma_fit)
+  expect_equal(nlme::fixef(with_na$lfit[[1]]), nlme::fixef(dropped$lfit[[1]]))
+})
+
+# Random intercept only, a few sparse visits per subject: the random slope
+# in ~ year | id then has a variance near zero, and lme(opt = "optim")
+# used to stop at its default 50 iterations with "optim problem,
+# convergence error code = 1" (seed 14 is one such dataset).
+simulate_sparse_long <- function(n, seed) {
+  set.seed(seed)
+  do.call(rbind, lapply(seq_len(n), function(i) {
+    t <- c(0, cumsum(stats::runif(5, 2, 6)))
+    t <- t[t < stats::runif(1, 3, 12)]
+    x <- stats::rnorm(1)
+    data.frame(id = i, year = t, x = x,
+               y = 1 + 0.3 * t + 0.4 * x + stats::rnorm(1, 0, 0.5) + stats::rnorm(length(t), 0, 0.3))
+  }))
+}
+
+test_that("longitudinalSub refits with more lme iterations when a variance is near zero", {
+  skip_on_cran()
+  d <- simulate_sparse_long(300, 14)
+  # the original settings fail on this dataset
+  expect_error(nlme::lme(y ~ year + x, random = ~ year | id, data = d, method = "ML",
+                         control = nlme::lmeControl(opt = "optim")), "optim problem")
+  expect_warning(fit <- longitudinalSub(list(d), y ~ year + x, ~ year | id), "msMaxIter = 1000")
+  expect_equal(unname(nlme::fixef(fit$lfit[[1]])), c(1, 0.3, 0.4), tolerance = 0.15)
+  expect_identical(fit$lfit[[1]]$call$control, quote(nlme::lmeControl(opt = "optim", msMaxIter = 1000)))
+
+  # a dataset that fits the first time keeps the original call
+  ok <- suppressWarnings(longitudinalSub(list(simulate_sparse_long(300, 1)), y ~ year + x, ~ year | id))
+  expect_identical(ok$lfit[[1]]$call$control, quote(nlme::lmeControl(opt = "optim")))
+})
+
+test_that("lme_with_retry only retries convergence failures", {
+  d <- simulate_sparse_long(50, 1)
+  # not a convergence problem: the original error, and lme() is run once
+  calls <- 0
+  failing_lme <- function(...) {
+    calls <<- calls + 1
+    stop("object 'not_a_column' not found")
+  }
+  expect_error(lme_with_retry(failing_lme(), "y"), "not_a_column")
+  expect_equal(calls, 1)
+
+  # a convergence failure that persists: one retry, then advice
+  calls <- 0
+  never_converges <- function(...) {
+    calls <<- calls + 1
+    stop("optim problem, convergence error code = 1")
+  }
+  expect_error(lme_with_retry(never_converges(control = 1), "y"), "simpler long_sub_random")
+  expect_equal(calls, 2)
+})
+
+test_that("longitudinalSub rejects responses that prediction cannot rebuild", {
+  data(pbc3, envir = environment())
+  d <- pbc3[pbc3$status3 == 1, ]
+  d$bili <- exp(d$serBilir)
+  # a transformed response used to fit, then fail in predictRisk()
+  expect_error(longitudinalSub(d, log(bili) ~ year + age + years, ~ year | id),
+               "transformed left-hand side")
+  d$grade <- factor(d$serBilir > 0)
+  expect_error(longitudinalSub(d, grade ~ year + age + years, ~ year | id, biomarker_type = "continuous"),
+               "not numeric")
+})
+
+test_that("subjects are matched by id across biomarkers when ids are not 1..n", {
+  data(pbc3, envir = environment())
+  d <- pbc3[pbc3$status3 == 1, ]
+  fixed <- list(serBilir ~ year + age + years, albumin ~ year + years)
+  random <- list(~ year | id, ~ year | id)
+  ref <- longitudinalSub(d, fixed, random)
+  d$id <- factor(paste0("P", 1000 - as.integer(as.character(d$id))))
+  relabelled <- longitudinalSub(d, fixed, random)
+  expect_equal(unname(relabelled$Sigma_fit), unname(ref$Sigma_fit))
+})

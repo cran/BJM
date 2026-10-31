@@ -1,7 +1,15 @@
-#' Plot of risk and future biomarker with density using dynamic prediction
-#' 
-#' @description This function gives the risk and biomarker prediction plot.
-#' 
+#' Plot risk and future biomarker predictions across a horizon sweep
+#'
+#' @description
+#' Fixes the landmark time at \code{prediction_time} and sweeps forward over
+#' a range of prediction horizons, calling \code{\link{predictRisk}}
+#' (and, when \code{bio_pred} is supplied, \code{\link{predictLongitudinal}})
+#' at each horizon to trace out how predicted event risk (and, optionally,
+#' the predicted density/point-forecast of biomarker \code{bio_pred}) evolves
+#' the further out the prediction window extends from a single fixed
+#' landmark. This contrasts with \code{\link{riskPlot}}, which instead fixes
+#' the horizon and sweeps over a set of landmark times.
+#'
 #' @param data_predict_all_one This involves a collection of \code{data.frame} one object for
 #' dynamic prediction and making plots, each corresponding to a distinct longitudinal outcome. 
 #' These data frames should contain the variables specified in \code{long_sub_fixed} 
@@ -32,7 +40,7 @@
 #' which resolves it once, before looping over \code{horizon} (using the
 #' largest requested horizon as a representative probe), by doubling from a
 #' built-in starting value until the predicted risk stabilizes; see
-#' \code{\link{dynamicPrediction}}'s \code{bandcount1} for details of that
+#' \code{\link{predictRisk}}'s \code{bandcount1} for details of that
 #' search. The resolved value is then reused, fixed, for every point in
 #' \code{horizon} -- it is not re-searched on every iteration.
 #' @param bandcount2 The number of grid points used to approximate
@@ -47,15 +55,17 @@
 #' unused otherwise).
 #'
 #' Pass explicit numbers instead of \code{"auto"} for full manual control, or
-#' use \code{checkBandcountConvergence()} (applied to \code{dynamicPrediction()}/
-#' \code{dynamicPredictionBio()} directly) to inspect the convergence behavior
+#' use \code{checkBandcountConvergence()} (applied to \code{predictRisk()}/
+#' \code{predictLongitudinal()} directly) to inspect the convergence behavior
 #' yourself. See also \code{vignette("BJM-intro", package = "BJM")} for
 #' further guidance on choosing \code{bandcount1}/\code{bandcount2}/
 #' \code{bandcount3}.
 #'
 #' @param bio_his Which biomarker history will be plotted
 #' @param bio_pred Indicator, predict future biomarker or not, if NULL do not predict
-#' @param density Indicator, plot future biomarker density or not, if NULL do not plot
+#' @param density Indicator, plot future biomarker density or not, if NULL do not plot.
+#' For an ordinal biomarker the prediction is instead drawn as each category's
+#' predicted probability (points sized by it), with the axis labelled by category.
 #' @param n_cores Number of CPU cores to use for computing the prediction at
 #' each point in \code{horizon}. Each point is computed independently, so
 #' this loop can be dispatched across cores. Defaults to \code{1} (serial
@@ -159,11 +169,6 @@ predictPlot = function(data_predict_all_one, long_fit_all, survival_fit_all,
                          sprintf("data_predict_all_one[[%d]]", i))
   }
 
-  coxph_fit = survival_fit_all$coxph_fit
-  survival_variable = as.character(formula(coxph_fit)[[2]])[2]
-  ### event type variable name
-  if(length(survival_fit_all$form_conditional_cr) != 0)  event_type_variable = as.character(formula(survival_fit_all$form_conditional_cr)[[2]])
-  
   #name of biomarker
   bio_i_name = as.character(formula(long_fit_all$long_sub_fixed[[bio_his]])[[2]])
   
@@ -171,6 +176,18 @@ predictPlot = function(data_predict_all_one, long_fit_all, survival_fit_all,
                            longitudinal = unlist(data_predict_all_one[[bio_his]][bio_i_name]))
   
   DP_data_bio = DP_data_bio[DP_data_bio$time <= prediction_time, ]
+  ### an ordinal history is plotted as its category codes 1:K, the same
+  ### codes dynamicPredictionBio() predicts on (max() failed on the factor)
+  if (is.factor(DP_data_bio$longitudinal)) {
+    training_levels <- long_fit_all$lfit[[bio_his]]$y.levels
+    DP_data_bio$longitudinal <- if (is.null(training_levels)) as.integer(DP_data_bio$longitudinal) else
+      match(as.character(DP_data_bio$longitudinal), training_levels)
+  }
+  ### an ordinal biomarker: its axis is labelled with the categories, and its
+  ### prediction drawn as each category's probability (quantile bands of a
+  ### handful of categories came out as overlapping blocks)
+  is_ordinal_bio <- !is.null(long_fit_all$biomarker_type) && long_fit_all$biomarker_type[bio_his] == "ordinal"
+  category_labels <- if (is_ordinal_bio) long_fit_all$lfit[[bio_his]]$y.levels
 
   ### data before the prediction time -- this does not depend on
   ### prediction.horizon, so it is built once here rather than inside the
@@ -192,7 +209,7 @@ predictPlot = function(data_predict_all_one, long_fit_all, survival_fit_all,
                         survival_variable_all = survival_variable_all,
                         survival_trans_function = survival_trans_function,
                         bandcount1 = bandcount1, bandcount2 = bandcount2)
-    resolved_1_2 <- auto_tune_bandcount(dynamicPrediction, probe_args, auto_names_1_2)$bandcount
+    resolved_1_2 <- auto_tune_bandcount(predictRisk, probe_args, auto_names_1_2)$bandcount
     if (!is.null(resolved_1_2$bandcount1)) bandcount1 <- resolved_1_2$bandcount1
     if (!is.null(resolved_1_2$bandcount2)) bandcount2 <- resolved_1_2$bandcount2
   }
@@ -219,7 +236,7 @@ predictPlot = function(data_predict_all_one, long_fit_all, survival_fit_all,
   has_cr <- length(survival_fit_all$form_conditional_cr) != 0
 
   compute_one_horizon <- function(prediction.horizon) {
-    risk.prob = dynamicPrediction(data_predict_all, long_fit_all, survival_fit_all,
+    risk.prob = predictRisk(data_predict_all, long_fit_all, survival_fit_all,
                                   prediction_time,
                                   horizon = prediction.horizon, time_variable,
                                   survival_variable_all, survival_trans_function,
@@ -246,6 +263,7 @@ predictPlot = function(data_predict_all_one, long_fit_all, survival_fit_all,
       }
       out$Y_predict_mode <- Y_predict_all$Y_predict
       out$quantiles <- quantiles
+      if (is_ordinal_bio) out$category_probs <- my_vector / sum(my_vector)
     }
 
     out
@@ -296,8 +314,21 @@ predictPlot = function(data_predict_all_one, long_fit_all, survival_fit_all,
     Y_predict_quantile_9_10 = Q[, 9]
   }
 
+  category_probs <- NULL
+  if (!is.null(bio_pred) && is_ordinal_bio) {
+    category_probs <- data.frame(
+      time = rep(prediction_time + horizon, each = length(category_labels)),
+      category = rep(seq_along(category_labels), times = length(horizon)),
+      prob = unlist(lapply(results_per_horizon, function(r) r$category_probs)))
+    density <- NULL   # the probabilities take the place of the density bands
+  }
+
   ### plot figure
-  scale_prob = 2 * max(na.omit(DP_data_bio$longitudinal))
+  ### risks are drawn on the biomarker's axis, scaled by scale_prob; it has
+  ### to be positive, which 2 * max(biomarker) was not when every value was
+  ### <= 0 (e.g. a log-scale biomarker), collapsing or flipping the risk axis
+  scale_prob = 2 * max(abs(c(DP_data_bio$longitudinal, Y_predict_mode)), na.rm = TRUE)
+  if (!is.finite(scale_prob) || scale_prob <= 0) scale_prob = 1
   if(length(survival_fit_all$form_conditional_cr) != 0 & is.null(bio_pred)){
       ## with competing risks, without longitudinal biomarker information
       
@@ -310,22 +341,22 @@ predictPlot = function(data_predict_all_one, long_fit_all, survival_fit_all,
         geom_point(data = DP_data_bio, aes(x = time, y = longitudinal, color = "Longitudinal")) +
         geom_text(data = DP_data_bio, aes(x = time, y = longitudinal, color = "Longitudinal"), label = "L", size = 4, vjust = -0.5)    +
         
-        geom_line(data = DP_data, aes(x = time, y = scale_prob * probType1, color = "Event type1"), linetype = "solid", size = 1) +
+        geom_line(data = DP_data, aes(x = time, y = scale_prob * probType1, color = "Event type1"), linetype = "solid", linewidth = 1) +
         geom_point(data = DP_data, aes(x = time, y = scale_prob * probType1, color = "Event type1"), size = 3) + 
-        geom_line(data = DP_data, aes(x = time, y = scale_prob * probType2, color = "Event type2"), linetype = "solid", size = 1) +
+        geom_line(data = DP_data, aes(x = time, y = scale_prob * probType2, color = "Event type2"), linetype = "solid", linewidth = 1) +
         geom_point(data = DP_data, aes(x = time, y = scale_prob * probType2, color = "Event type2"), size = 3)   + 
         
         scale_color_manual(name = "Lines",
                            values = c("Longitudinal" = "green",  
                                       "Event type1" = "black", "Event type2" = "red"),
                            guide = guide_legend(title = "Linetype"))  + 
-        scale_y_continuous(sec.axis = sec_axis(~./scale_prob, name="Risk Probabilities")) + 
+        risk_axis_scale(scale_prob, category_labels) + 
         ylab("Longitudinal biomarker") + xlab("Follow-up time") +   
         scale_x_continuous(breaks = seq(0, 15, 1))  +
-        geom_vline(xintercept = prediction_time, linetype = "solid", color = "brown", size = 1) + 
+        geom_vline(xintercept = prediction_time, linetype = "solid", color = "brown", linewidth = 1) + 
         geom_hline(yintercept = c(0, scale_prob/5, scale_prob/5*2, scale_prob/5*3, 
                                   scale_prob/5*4, scale_prob), 
-                   linetype = "dotted", color = "pink", size = 1.2) +
+                   linetype = "dotted", color = "pink", linewidth = 1.2) +
         theme_bw(base_size = 25)+
         theme(panel.grid.major = element_blank(),
               panel.grid.minor = element_blank(),
@@ -357,19 +388,19 @@ predictPlot = function(data_predict_all_one, long_fit_all, survival_fit_all,
         geom_point(data = DP_data_bio, aes(x = time, y = longitudinal, color = "Longitudinal")) +
         geom_text(data = DP_data_bio, aes(x = time, y = longitudinal, color = "Longitudinal"), label = "L", size = 4, vjust = -0.5)    +
         
-        geom_line(data = DP_data, aes(x = time, y = predMode, color = "Longitudinal"), linetype = "solid", size = 4) + 
+        geom_line(data = DP_data, aes(x = time, y = predMode, color = "Longitudinal"), linetype = "solid", linewidth = 4) + 
         geom_point(data = DP_data, aes(x = time, y = predMode, color = "Longitudinal")) +
         geom_text(data = DP_data, aes(x = time, y = predMode, color = "Longitudinal"), label = "L", size = 6, vjust = -0.5)    +
         
-        geom_line(data = DP_data, aes(x = time, y = predQuan1, color = "Longitudinal"), linetype = "dashed", size = 0.4) + 
-        geom_line(data = DP_data, aes(x = time, y = predQuan2, color = "Longitudinal"), linetype = "dashed", size = 0.4) + 
-        geom_line(data = DP_data, aes(x = time, y = predQuan3, color = "Longitudinal"), linetype = "dashed", size = 0.4) + 
-        geom_line(data = DP_data, aes(x = time, y = predQuan4, color = "Longitudinal"), linetype = "dashed", size = 0.4) + 
-        geom_line(data = DP_data, aes(x = time, y = predQuan5, color = "Longitudinal"), linetype = "dashed", size = 0.4) + 
-        geom_line(data = DP_data, aes(x = time, y = predQuan6, color = "Longitudinal"), linetype = "dashed", size = 0.4) + 
-        geom_line(data = DP_data, aes(x = time, y = predQuan7, color = "Longitudinal"), linetype = "dashed", size = 0.4) + 
-        geom_line(data = DP_data, aes(x = time, y = predQuan8, color = "Longitudinal"), linetype = "dashed", size = 0.4) + 
-        geom_line(data = DP_data, aes(x = time, y = predQuan9, color = "Longitudinal"), linetype = "dashed", size = 0.4) + 
+        geom_line(data = DP_data, aes(x = time, y = predQuan1, color = "Longitudinal"), linetype = "dashed", linewidth = 0.4) + 
+        geom_line(data = DP_data, aes(x = time, y = predQuan2, color = "Longitudinal"), linetype = "dashed", linewidth = 0.4) + 
+        geom_line(data = DP_data, aes(x = time, y = predQuan3, color = "Longitudinal"), linetype = "dashed", linewidth = 0.4) + 
+        geom_line(data = DP_data, aes(x = time, y = predQuan4, color = "Longitudinal"), linetype = "dashed", linewidth = 0.4) + 
+        geom_line(data = DP_data, aes(x = time, y = predQuan5, color = "Longitudinal"), linetype = "dashed", linewidth = 0.4) + 
+        geom_line(data = DP_data, aes(x = time, y = predQuan6, color = "Longitudinal"), linetype = "dashed", linewidth = 0.4) + 
+        geom_line(data = DP_data, aes(x = time, y = predQuan7, color = "Longitudinal"), linetype = "dashed", linewidth = 0.4) + 
+        geom_line(data = DP_data, aes(x = time, y = predQuan8, color = "Longitudinal"), linetype = "dashed", linewidth = 0.4) + 
+        geom_line(data = DP_data, aes(x = time, y = predQuan9, color = "Longitudinal"), linetype = "dashed", linewidth = 0.4) + 
         
         # Add the shaded area between the two lines
         geom_ribbon(data = DP_data, aes(x = time, ymin = predQuan1, ymax = predQuan2), fill = "#00FFCC", alpha = 0.5) + 
@@ -381,22 +412,22 @@ predictPlot = function(data_predict_all_one, long_fit_all, survival_fit_all,
         geom_ribbon(data = DP_data, aes(x = time, ymin = predQuan7, ymax = predQuan8), fill = "#33CC99", alpha = 0.5) + 
         geom_ribbon(data = DP_data, aes(x = time, ymin = predQuan8, ymax = predQuan9), fill = "#00FFCC", alpha = 0.5) + 
         
-        geom_line(data = DP_data, aes(x = time, y = scale_prob * probType1, color = "Event type1"), linetype = "solid", size = 1) +
+        geom_line(data = DP_data, aes(x = time, y = scale_prob * probType1, color = "Event type1"), linetype = "solid", linewidth = 1) +
         geom_point(data = DP_data, aes(x = time, y = scale_prob * probType1, color = "Event type1"), size = 3) + 
-        geom_line(data = DP_data, aes(x = time, y = scale_prob * probType2, color = "Event type2"), linetype = "solid", size = 1) +
+        geom_line(data = DP_data, aes(x = time, y = scale_prob * probType2, color = "Event type2"), linetype = "solid", linewidth = 1) +
         geom_point(data = DP_data, aes(x = time, y = scale_prob * probType2, color = "Event type2"), size = 3)   + 
         
         scale_color_manual(name = "Lines",
                            values = c("Longitudinal" = "green",  
                                       "Event type1" = "black", "Event type2" = "red"),
                            guide = guide_legend(title = "Linetype"))  + 
-        scale_y_continuous(sec.axis = sec_axis(~./scale_prob, name="Risk Probabilities")) + 
+        risk_axis_scale(scale_prob, category_labels) + 
         ylab("Longitudinal biomarker") + xlab("Follow-up time") +  
         scale_x_continuous(breaks = seq(0, 15, 1))  +
-        geom_vline(xintercept = prediction_time, linetype = "solid", color = "brown", size = 1) + 
+        geom_vline(xintercept = prediction_time, linetype = "solid", color = "brown", linewidth = 1) + 
         geom_hline(yintercept = c(0, scale_prob/5, scale_prob/5*2, scale_prob/5*3, 
                                   scale_prob/5*4, scale_prob), 
-                   linetype = "dotted", color = "pink", size = 1.2) +
+                   linetype = "dotted", color = "pink", linewidth = 1.2) +
         theme_bw(base_size = 25)+
         theme(panel.grid.major = element_blank(),
               panel.grid.minor = element_blank(),
@@ -425,26 +456,26 @@ predictPlot = function(data_predict_all_one, long_fit_all, survival_fit_all,
         geom_point(data = DP_data_bio, aes(x = time, y = longitudinal, color = "Longitudinal")) +
         geom_text(data = DP_data_bio, aes(x = time, y = longitudinal, color = "Longitudinal"), label = "L", size = 4, vjust = -0.5)    +
         
-        geom_line(data = DP_data, aes(x = time, y = predMode, color = "Longitudinal"), linetype = "solid", size = 4) + 
+        geom_line(data = DP_data, aes(x = time, y = predMode, color = "Longitudinal"), linetype = "solid", linewidth = 4) + 
         geom_point(data = DP_data, aes(x = time, y = predMode, color = "Longitudinal")) +
         geom_text(data = DP_data, aes(x = time, y = predMode, color = "Longitudinal"), label = "L", size = 6, vjust = -0.5)    +
         
-        geom_line(data = DP_data, aes(x = time, y = scale_prob * probType1, color = "Event type1"), linetype = "solid", size = 1) +
+        geom_line(data = DP_data, aes(x = time, y = scale_prob * probType1, color = "Event type1"), linetype = "solid", linewidth = 1) +
         geom_point(data = DP_data, aes(x = time, y = scale_prob * probType1, color = "Event type1"), size = 3) + 
-        geom_line(data = DP_data, aes(x = time, y = scale_prob * probType2, color = "Event type2"), linetype = "solid", size = 1) +
+        geom_line(data = DP_data, aes(x = time, y = scale_prob * probType2, color = "Event type2"), linetype = "solid", linewidth = 1) +
         geom_point(data = DP_data, aes(x = time, y = scale_prob * probType2, color = "Event type2"), size = 3)   + 
         
         scale_color_manual(name = "Lines",
                            values = c("Longitudinal" = "green",  
                                       "Event type1" = "black", "Event type2" = "red"),
                            guide = guide_legend(title = "Linetype"))  + 
-        scale_y_continuous(sec.axis = sec_axis(~./scale_prob, name="Risk Probabilities")) + 
+        risk_axis_scale(scale_prob, category_labels) + 
         ylab("Longitudinal biomarker") + xlab("Follow-up time") +   
         scale_x_continuous(breaks = seq(0, 15, 1))  +
-        geom_vline(xintercept = prediction_time, linetype = "solid", color = "brown", size = 1) + 
+        geom_vline(xintercept = prediction_time, linetype = "solid", color = "brown", linewidth = 1) + 
         geom_hline(yintercept = c(0, scale_prob/5, scale_prob/5*2, scale_prob/5*3, 
                                   scale_prob/5*4, scale_prob), 
-                   linetype = "dotted", color = "pink", size = 1.2) +
+                   linetype = "dotted", color = "pink", linewidth = 1.2) +
         theme_bw(base_size = 25)+
         theme(panel.grid.major = element_blank(),
               panel.grid.minor = element_blank(),
@@ -462,20 +493,20 @@ predictPlot = function(data_predict_all_one, long_fit_all, survival_fit_all,
         geom_point(data = DP_data_bio, aes(x = time, y = longitudinal, color = "Longitudinal")) +
         geom_text(data = DP_data_bio, aes(x = time, y = longitudinal, color = "Longitudinal"), label = "L", size = 4, vjust = -0.5)    +
         
-        geom_line(data = DP_data, aes(x = time, y = scale_prob * probType1, color = "Risk probability"), linetype = "solid", size = 1) +
+        geom_line(data = DP_data, aes(x = time, y = scale_prob * probType1, color = "Risk probability"), linetype = "solid", linewidth = 1) +
         geom_point(data = DP_data, aes(x = time, y = scale_prob * probType1, color = "Risk probability"), size = 3) + 
 
         scale_color_manual(name = "Lines",
                            values = c("Longitudinal" = "green",  
                                       "Risk probability" = "black"),
                            guide = guide_legend(title = "Linetype"))  + 
-        scale_y_continuous(sec.axis = sec_axis(~./scale_prob, name="Risk Probabilities")) + 
+        risk_axis_scale(scale_prob, category_labels) + 
         ylab("Longitudinal biomarker") + xlab("Follow-up time") +   
         scale_x_continuous(breaks = seq(0, 15, 1))  +
-        geom_vline(xintercept = prediction_time, linetype = "solid", color = "brown", size = 1) + 
+        geom_vline(xintercept = prediction_time, linetype = "solid", color = "brown", linewidth = 1) + 
         geom_hline(yintercept = c(0, scale_prob/5, scale_prob/5*2, scale_prob/5*3, 
                                   scale_prob/5*4, scale_prob), 
-                   linetype = "dotted", color = "pink", size = 1.2) +
+                   linetype = "dotted", color = "pink", linewidth = 1.2) +
         theme_bw(base_size = 25)+
         theme(panel.grid.major = element_blank(),
               panel.grid.minor = element_blank(),
@@ -504,19 +535,19 @@ predictPlot = function(data_predict_all_one, long_fit_all, survival_fit_all,
         geom_point(data = DP_data_bio, aes(x = time, y = longitudinal, color = "Longitudinal")) +
         geom_text(data = DP_data_bio, aes(x = time, y = longitudinal, color = "Longitudinal"), label = "L", size = 4, vjust = -0.5)    +
         
-        geom_line(data = DP_data, aes(x = time, y = predMode, color = "Longitudinal"), linetype = "solid", size = 4) + 
+        geom_line(data = DP_data, aes(x = time, y = predMode, color = "Longitudinal"), linetype = "solid", linewidth = 4) + 
         geom_point(data = DP_data, aes(x = time, y = predMode, color = "Longitudinal")) +
         geom_text(data = DP_data, aes(x = time, y = predMode, color = "Longitudinal"), label = "L", size = 6, vjust = -0.5)    +
         
-        geom_line(data = DP_data, aes(x = time, y = predQuan1, color = "Longitudinal"), linetype = "dashed", size = 0.4) + 
-        geom_line(data = DP_data, aes(x = time, y = predQuan2, color = "Longitudinal"), linetype = "dashed", size = 0.4) + 
-        geom_line(data = DP_data, aes(x = time, y = predQuan3, color = "Longitudinal"), linetype = "dashed", size = 0.4) + 
-        geom_line(data = DP_data, aes(x = time, y = predQuan4, color = "Longitudinal"), linetype = "dashed", size = 0.4) + 
-        geom_line(data = DP_data, aes(x = time, y = predQuan5, color = "Longitudinal"), linetype = "dashed", size = 0.4) + 
-        geom_line(data = DP_data, aes(x = time, y = predQuan6, color = "Longitudinal"), linetype = "dashed", size = 0.4) + 
-        geom_line(data = DP_data, aes(x = time, y = predQuan7, color = "Longitudinal"), linetype = "dashed", size = 0.4) + 
-        geom_line(data = DP_data, aes(x = time, y = predQuan8, color = "Longitudinal"), linetype = "dashed", size = 0.4) + 
-        geom_line(data = DP_data, aes(x = time, y = predQuan9, color = "Longitudinal"), linetype = "dashed", size = 0.4) + 
+        geom_line(data = DP_data, aes(x = time, y = predQuan1, color = "Longitudinal"), linetype = "dashed", linewidth = 0.4) + 
+        geom_line(data = DP_data, aes(x = time, y = predQuan2, color = "Longitudinal"), linetype = "dashed", linewidth = 0.4) + 
+        geom_line(data = DP_data, aes(x = time, y = predQuan3, color = "Longitudinal"), linetype = "dashed", linewidth = 0.4) + 
+        geom_line(data = DP_data, aes(x = time, y = predQuan4, color = "Longitudinal"), linetype = "dashed", linewidth = 0.4) + 
+        geom_line(data = DP_data, aes(x = time, y = predQuan5, color = "Longitudinal"), linetype = "dashed", linewidth = 0.4) + 
+        geom_line(data = DP_data, aes(x = time, y = predQuan6, color = "Longitudinal"), linetype = "dashed", linewidth = 0.4) + 
+        geom_line(data = DP_data, aes(x = time, y = predQuan7, color = "Longitudinal"), linetype = "dashed", linewidth = 0.4) + 
+        geom_line(data = DP_data, aes(x = time, y = predQuan8, color = "Longitudinal"), linetype = "dashed", linewidth = 0.4) + 
+        geom_line(data = DP_data, aes(x = time, y = predQuan9, color = "Longitudinal"), linetype = "dashed", linewidth = 0.4) + 
         
         # Add the shaded area between the two lines
         geom_ribbon(data = DP_data, aes(x = time, ymin = predQuan1, ymax = predQuan2), fill = "#00FFCC", alpha = 0.5) + 
@@ -528,20 +559,20 @@ predictPlot = function(data_predict_all_one, long_fit_all, survival_fit_all,
         geom_ribbon(data = DP_data, aes(x = time, ymin = predQuan7, ymax = predQuan8), fill = "#33CC99", alpha = 0.5) + 
         geom_ribbon(data = DP_data, aes(x = time, ymin = predQuan8, ymax = predQuan9), fill = "#00FFCC", alpha = 0.5) + 
         
-        geom_line(data = DP_data, aes(x = time, y = scale_prob * probType1, color = "Risk probability"), linetype = "solid", size = 1) +
+        geom_line(data = DP_data, aes(x = time, y = scale_prob * probType1, color = "Risk probability"), linetype = "solid", linewidth = 1) +
         geom_point(data = DP_data, aes(x = time, y = scale_prob * probType1, color = "Risk probability"), size = 3) + 
 
         scale_color_manual(name = "Lines",
                            values = c("Longitudinal" = "green",  
                                       "Risk probability" = "black"),
                            guide = guide_legend(title = "Linetype"))  + 
-        scale_y_continuous(sec.axis = sec_axis(~./scale_prob, name="Risk Probabilities")) + 
+        risk_axis_scale(scale_prob, category_labels) + 
         ylab("Longitudinal biomarker") + xlab("Follow-up time") +   
         scale_x_continuous(breaks = seq(0, 15, 1))  +
-        geom_vline(xintercept = prediction_time, linetype = "solid", color = "brown", size = 1) + 
+        geom_vline(xintercept = prediction_time, linetype = "solid", color = "brown", linewidth = 1) + 
         geom_hline(yintercept = c(0, scale_prob/5, scale_prob/5*2, scale_prob/5*3, 
                                   scale_prob/5*4, scale_prob), 
-                   linetype = "dotted", color = "pink", size = 1.2) +
+                   linetype = "dotted", color = "pink", linewidth = 1.2) +
         theme_bw(base_size = 25)+
         theme(panel.grid.major = element_blank(),
               panel.grid.minor = element_blank(),
@@ -570,24 +601,24 @@ predictPlot = function(data_predict_all_one, long_fit_all, survival_fit_all,
         geom_point(data = DP_data_bio, aes(x = time, y = longitudinal, color = "Longitudinal")) +
         geom_text(data = DP_data_bio, aes(x = time, y = longitudinal, color = "Longitudinal"), label = "L", size = 4, vjust = -0.5)    +
         
-        geom_line(data = DP_data, aes(x = time, y = predMode, color = "Longitudinal"), linetype = "solid", size = 4) + 
+        geom_line(data = DP_data, aes(x = time, y = predMode, color = "Longitudinal"), linetype = "solid", linewidth = 4) + 
         geom_point(data = DP_data, aes(x = time, y = predMode, color = "Longitudinal")) +
         geom_text(data = DP_data, aes(x = time, y = predMode, color = "Longitudinal"), label = "L", size = 6, vjust = -0.5)    +
         
-        geom_line(data = DP_data, aes(x = time, y = scale_prob * probType1, color = "Risk probability"), linetype = "solid", size = 1) +
+        geom_line(data = DP_data, aes(x = time, y = scale_prob * probType1, color = "Risk probability"), linetype = "solid", linewidth = 1) +
         geom_point(data = DP_data, aes(x = time, y = scale_prob * probType1, color = "Risk probability"), size = 3) + 
         
         scale_color_manual(name = "Lines",
                            values = c("Longitudinal" = "green",  
                                       "Risk probability" = "black"),
                            guide = guide_legend(title = "Linetype"))  + 
-        scale_y_continuous(sec.axis = sec_axis(~./scale_prob, name="Risk Probabilities")) + 
+        risk_axis_scale(scale_prob, category_labels) + 
         ylab("Longitudinal biomarker") + xlab("Follow-up time") +   
         scale_x_continuous(breaks = seq(0, 15, 1))  +
-        geom_vline(xintercept = prediction_time, linetype = "solid", color = "brown", size = 1) + 
+        geom_vline(xintercept = prediction_time, linetype = "solid", color = "brown", linewidth = 1) + 
         geom_hline(yintercept = c(0, scale_prob/5, scale_prob/5*2, scale_prob/5*3, 
                                   scale_prob/5*4, scale_prob), 
-                   linetype = "dotted", color = "pink", size = 1.2) +
+                   linetype = "dotted", color = "pink", linewidth = 1.2) +
         theme_bw(base_size = 25)+
         theme(panel.grid.major = element_blank(),
               panel.grid.minor = element_blank(),
@@ -596,6 +627,13 @@ predictPlot = function(data_predict_all_one, long_fit_all, survival_fit_all,
       
       
     }
-    
+
+  if (!is.null(category_probs)) {
+    dp_plot <- dp_plot +
+      geom_point(data = category_probs, aes(x = time, y = category, size = prob),
+                 color = "green4", alpha = 0.5) +
+      ggplot2::scale_size_area(name = "Predicted\nprobability", max_size = 10)
+  }
+
   return(dp_plot)
 }

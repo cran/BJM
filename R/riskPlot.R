@@ -1,7 +1,28 @@
-#' Plot of risk using dynamic prediction
-#' 
-#' @description This function gives the risk prediction plot.
-#' 
+#' Plot predicted risk across a sweep of landmark times
+#'
+#' @description
+#' Fixes the prediction horizon and sweeps backward/forward over a set of
+#' landmark times, calling \code{\link{predictRisk}} at each landmark
+#' in \code{prediction_time} to trace out how predicted event risk over that
+#' fixed-length window changes as the landmark moves -- i.e. as more (or
+#' less) of the subject's longitudinal history is used to update their
+#' risk. \code{prediction_time} may be a vector of landmark times to use
+#' directly; a single value, which is expanded to three landmarks
+#' (\code{prediction_time}, \code{1.5 * prediction_time},
+#' \code{2 * prediction_time}); or \code{NULL}, which uses every observed
+#' longitudinal measurement time (across subjects, from the first
+#' biomarker's data) as a landmark. This contrasts with
+#' \code{\link{predictPlot}}, which instead fixes the landmark and sweeps
+#' over a range of horizons. The optional \code{bio_i} argument only selects
+#' which biomarker's observed trajectory is overlaid on the plot for visual
+#' reference -- it does not affect the risk computation itself (unlike
+#' \code{\link{predictPlot}}'s \code{bio_pred}, which drives a biomarker
+#' density prediction).
+#'
+#' When the data give the subject's survival time and status, a vertical
+#' line marks the end of follow-up: solid for an observed event (coloured by
+#' event type with competing risks), dashed grey for a censoring.
+#'
 #' @param data_predict_all_pre This involves a collection of \code{data.frame} objects for
 #' dynamic prediction, each corresponding to a distinct longitudinal outcome. These data
 #' frames should contain the variables specified in \code{long_sub_fixed} and
@@ -17,8 +38,14 @@
 #' @param survival_fit_all Results and parameters generated from the model fitting 
 #' procedure, utilizing the \code{coxph} function. These outputs include the comprehensive 
 #' findings and variables derived from the analysis.
-#' @param prediction_time Time used to make the prediction.
-#' @param bio_i Biomarker used to do prediction. 
+#' @param prediction_time The landmark time(s) at which risks are predicted
+#' and plotted: \code{NULL} (the default) uses every visit time
+#' (\code{time_variable}) in the patient's data; a single value \code{s} uses the three
+#' landmarks \code{s}, \code{1.5 * s} and \code{2 * s}; a vector uses those
+#' times. At each landmark only the history up to it is used.
+#' @param bio_i Biomarker whose observed history is drawn alongside the
+#' predicted risks (by position in \code{long_fit_all}); \code{NULL} draws
+#' the first one.
 #' @param horizon Prediction horizon.
 #' @param time_variable The name of time variable in linear mixed model.
 #' @param survival_variable_all The name of the transformed time-to-event outcomes variable.
@@ -30,7 +57,7 @@
 #' which resolves it once, before looping over the landmark times, (using
 #' the first landmark time as a representative probe) by doubling from a
 #' built-in starting value until the predicted risk stabilizes; see
-#' \code{\link{dynamicPrediction}}'s \code{bandcount1} for details of that
+#' \code{\link{predictRisk}}'s \code{bandcount1} for details of that
 #' search. The resolved value is then reused, fixed, for every landmark
 #' time -- it is not re-searched on every iteration.
 #' @param bandcount2 The number of grid points used to approximate
@@ -40,7 +67,7 @@
 #' \code{bandcount1} (jointly with it, when both are \code{"auto"}).
 #'
 #' Pass explicit numbers instead of \code{"auto"} for full manual control, or
-#' use \code{checkBandcountConvergence()} (applied to \code{dynamicPrediction()}
+#' use \code{checkBandcountConvergence()} (applied to \code{predictRisk()}
 #' directly) to inspect the convergence behavior yourself. See also
 #' \code{vignette("BJM-intro", package = "BJM")} for further guidance on
 #' choosing \code{bandcount1}/\code{bandcount2}.
@@ -58,6 +85,23 @@
 #' numeric result as serial execution -- only the order in which iterations
 #' are computed (not the order results are assembled in) changes.
 #' @return Plot of risk using dynamic prediction.
+#' @examples
+#' \donttest{
+#' data(pbc3)
+#' survival_fit_all <- survivalSub(pbc3[!duplicated(pbc3$id), ],
+#'                                 Surv(years, status3) ~ age + sex, NULL)
+#' long_fit_all <- longitudinalSub(pbc3[pbc3$status3 == 1, ],
+#'                                 list(serBilir ~ year + age + sex + years,
+#'                                      albumin ~ year + age + sex + years),
+#'                                 list(~ year | id, ~ year | id))
+#'
+#' # one patient's whole history; risks within 2 years of landmarks 2, 3, 4
+#' patient <- pbc3[pbc3$id == 2, ]
+#' riskPlot(patient, long_fit_all, survival_fit_all, prediction_time = c(2, 3, 4),
+#'          bio_i = 1, horizon = 2, time_variable = "year",
+#'          survival_variable_all = list(), survival_trans_function = list(),
+#'          bandcount1 = 10, bandcount2 = 20)
+#' }
 #' @export
 riskPlot = function(data_predict_all_pre, long_fit_all, survival_fit_all,
                        prediction_time = NULL, bio_i = NULL,
@@ -79,8 +123,8 @@ riskPlot = function(data_predict_all_pre, long_fit_all, survival_fit_all,
   assert_bandcount(bandcount1, "bandcount1")
   assert_bandcount(bandcount2, "bandcount2")
   assert_positive_integer(n_cores, "n_cores")
-  # prediction_time may be NULL (landmark defaults to each patient's first
-  # observed time_variable value) or a vector of landmark times; probe with
+  # prediction_time may be NULL (landmarks at every visit time in the
+  # data) or a vector of landmark times; probe with
   # the first usable value, or skip the probe entirely if none is available yet.
   survival_trans_probe <- if (is.numeric(prediction_time) && length(prediction_time) >= 1 && !anyNA(prediction_time[1])) {
     prediction_time[1]
@@ -93,8 +137,7 @@ riskPlot = function(data_predict_all_pre, long_fit_all, survival_fit_all,
                          sprintf("data_predict_all_pre[[%d]]", i))
   }
 
-  coxph_fit = survival_fit_all$coxph_fit
-  survival_variable = as.character(formula(coxph_fit)[[2]])[2]
+  survival_variable = survival_time_variable(survival_fit_all)
   
   ### event type variable name
   if(length(survival_fit_all$form_conditional_cr) != 0){
@@ -113,6 +156,22 @@ riskPlot = function(data_predict_all_pre, long_fit_all, survival_fit_all,
     DP_data_bio = data.frame(time = unlist(data_predict_all_pre[[bio_i]][time_variable]),
                              longitudinal = unlist(data_predict_all_pre[[bio_i]][bio_i_name]))
     
+  }
+  ### an ordinal history is plotted as its category codes 1:K, and the axis
+  ### labelled with the categories
+  history_labels <- NULL
+  if (is.factor(DP_data_bio$longitudinal)) {
+    history_labels <- long_fit_all$lfit[[if (is.null(bio_i)) 1 else bio_i]]$y.levels
+    training_levels <- long_fit_all$lfit[[if (is.null(bio_i)) 1 else bio_i]]$y.levels
+    DP_data_bio$longitudinal <- if (is.null(training_levels)) as.integer(DP_data_bio$longitudinal) else
+      match(as.character(DP_data_bio$longitudinal), training_levels)
+  }
+  ### risks are drawn on the biomarker's axis, scaled by scale_prob; it has
+  ### to be positive, which 2 * max(biomarker) was not when every value was
+  ### <= 0 (e.g. a log-scale biomarker), collapsing or flipping the risk axis
+  scale_prob_of <- function(v) {
+    out <- 2 * max(abs(v), na.rm = TRUE)
+    if (!is.finite(out) || out <= 0) 1 else out
   }
   
   
@@ -140,7 +199,7 @@ riskPlot = function(data_predict_all_pre, long_fit_all, survival_fit_all,
                         survival_variable_all = survival_variable_all,
                         survival_trans_function = survival_trans_function,
                         bandcount1 = bandcount1, bandcount2 = bandcount2)
-    resolved_1_2 <- auto_tune_bandcount(dynamicPrediction, probe_args, auto_names_1_2)$bandcount
+    resolved_1_2 <- auto_tune_bandcount(predictRisk, probe_args, auto_names_1_2)$bandcount
     if (!is.null(resolved_1_2$bandcount1)) bandcount1 <- resolved_1_2$bandcount1
     if (!is.null(resolved_1_2$bandcount2)) bandcount2 <- resolved_1_2$bandcount2
   }
@@ -155,13 +214,22 @@ riskPlot = function(data_predict_all_pre, long_fit_all, survival_fit_all,
   ### accumulation.
   has_cr <- length(survival_fit_all$form_conditional_cr) != 0
 
+  survival_variable <- survival_time_variable(survival_fit_all)
   compute_one_landmark <- function(time.cutoff) {
     data_predict_all = list()
     for(i in seq_len(length(long_fit_all$long_sub_fixed))){
       data_predict_all[[i]] = data_predict_all_pre[[i]][data_predict_all_pre[[i]][time_variable] <= time.cutoff,]
     }
+    ### a landmark time after the patient's event (or censoring) has no
+    ### prediction; skipped here, as predictRisk() stops when no patient is
+    ### at risk
+    s <- data_predict_all[[1]][[survival_variable]]
+    if (!is.null(s) && !any(is.na(s) | s >= time.cutoff)) {
+      return(list(time.cutoff = time.cutoff, risk_prob_1 = numeric(0),
+                  risk_prob_2 = if (has_cr) numeric(0) else NULL, keep = FALSE))
+    }
 
-    risk.prob = dynamicPrediction(data_predict_all, long_fit_all, survival_fit_all,
+    risk.prob = predictRisk(data_predict_all, long_fit_all, survival_fit_all,
                                   prediction_time = time.cutoff,
                                   horizon, time_variable,
                                   survival_variable_all, survival_trans_function,
@@ -202,18 +270,17 @@ riskPlot = function(data_predict_all_pre, long_fit_all, survival_fit_all,
     if(is.null(bio_i)){
       ## do not plot longitudinal biomarker information
       dp_risk = ggplot() +
-        geom_line(data = DP_data, aes(x = time, y = probType1, color = "Event type1"), linetype = "solid", size = 1) +
+        geom_line(data = DP_data, aes(x = time, y = probType1, color = "Event type1"), linetype = "solid", linewidth = 1) +
         geom_point(data = DP_data, aes(x = time, y = probType1, color = "Event type1"), size = 3) + 
-        geom_line(data = DP_data, aes(x = time, y = probType2, color = "Event type2"), linetype = "solid", size = 1) +
+        geom_line(data = DP_data, aes(x = time, y = probType2, color = "Event type2"), linetype = "solid", linewidth = 1) +
         geom_point(data = DP_data, aes(x = time, y = probType2, color = "Event type2"), size = 3) +  
         
         scale_color_manual(name = "Lines",
                            values = c("Event type1" = "black", "Event type2" = "red"))   +
-        scale_y_continuous(sec.axis = sec_axis(~./scale_prob, name="Risk Probabilities")) + 
+        risk_axis_scale(scale_prob, history_labels) + 
         ylab("Predicted risk probability") + xlab("Follow-up time") +   
         #0 - 1 black, 1 - 2 red
-        geom_vline(xintercept = unlist(getFirst(data_predict_all_pre)[survival_variable])[1], 
-                   linetype = "solid", color = unlist(getFirst(data_predict_all_pre)[event_type_variable])[1] + 1, size = 2) + 
+        event_time_vline(data_predict_all_pre, survival_fit_all, event_type_variable) + 
         theme_bw(base_size = 25) +
         theme(panel.grid.major = element_blank(),
               panel.grid.minor = element_blank(),
@@ -223,24 +290,23 @@ riskPlot = function(data_predict_all_pre, long_fit_all, survival_fit_all,
     }else{
       ## plot longitudinal biomarker information with risk prediction
       
-      scale_prob = 2 * max(na.omit(DP_data_bio$longitudinal))
+      scale_prob = scale_prob_of(DP_data_bio$longitudinal)
       dp_risk = ggplot() +
         geom_line(data = DP_data_bio, aes(x = time, y = longitudinal, color = "Longitudinal")) + 
         geom_point(data = DP_data_bio, aes(x = time, y = longitudinal, color = "Longitudinal")) +
         geom_text(data = DP_data_bio, aes(x = time, y = longitudinal, color = "Longitudinal"), label = "L", size = 4, vjust = -0.5)    +
         
-        geom_line(data = DP_data, aes(x = time, y = scale_prob * probType1, color = "Event type1"), linetype = "solid", size = 1) +
+        geom_line(data = DP_data, aes(x = time, y = scale_prob * probType1, color = "Event type1"), linetype = "solid", linewidth = 1) +
         geom_point(data = DP_data, aes(x = time, y = scale_prob * probType1, color = "Event type1"), size = 3) + 
-        geom_line(data = DP_data, aes(x = time, y = scale_prob * probType2, color = "Event type2"), linetype = "solid", size = 1) +
+        geom_line(data = DP_data, aes(x = time, y = scale_prob * probType2, color = "Event type2"), linetype = "solid", linewidth = 1) +
         geom_point(data = DP_data, aes(x = time, y = scale_prob * probType2, color = "Event type2"), size = 3) +  
         
         scale_color_manual(name = "Lines",
                            values = c("Longitudinal" = "green",
                                       "Event type1" = "black", "Event type2" = "red"))   +
-        scale_y_continuous(sec.axis = sec_axis(~./scale_prob, name="Risk Probabilities")) + 
+        risk_axis_scale(scale_prob, history_labels) + 
         ylab("Longitudinal biomarker") + xlab("Follow-up time") +   
-        geom_vline(xintercept = unlist(getFirst(data_predict_all_pre)[survival_variable])[1], 
-                   linetype = "solid", color = unlist(getFirst(data_predict_all_pre)[event_type_variable])[1] + 1, size = 2) + 
+        event_time_vline(data_predict_all_pre, survival_fit_all, event_type_variable) + 
         theme_bw(base_size = 25)+
         theme(panel.grid.major = element_blank(),
               panel.grid.minor = element_blank(),
@@ -257,7 +323,7 @@ riskPlot = function(data_predict_all_pre, long_fit_all, survival_fit_all,
     if(is.null(bio_i)){
       ## do not plot longitudinal biomarker information
       dp_risk = ggplot() +
-        geom_line(data = DP_data, aes(x = time, y = probType1, color = "black"), linetype = "solid", size = 1) +
+        geom_line(data = DP_data, aes(x = time, y = probType1, color = "black"), linetype = "solid", linewidth = 1) +
         geom_point(data = DP_data, aes(x = time, y = probType1, color = "black"), size = 3) + 
         
         ylab("Predicted risk probability") + xlab("Follow-up time") +   
@@ -270,22 +336,21 @@ riskPlot = function(data_predict_all_pre, long_fit_all, survival_fit_all,
       
     }else{
       ## plot longitudinal biomarker information
-      scale_prob = 2 * max(na.omit(DP_data_bio$longitudinal))
+      scale_prob = scale_prob_of(DP_data_bio$longitudinal)
       dp_risk = ggplot() +
         geom_line(data = DP_data_bio, aes(x = time, y = longitudinal, color = "Longitudinal")) + 
         geom_point(data = DP_data_bio, aes(x = time, y = longitudinal, color = "Longitudinal")) +
         geom_text(data = DP_data_bio, aes(x = time, y = longitudinal, color = "Longitudinal"), label = "L", size = 4, vjust = -0.5)    +
         
-        geom_line(data = DP_data, aes(x = time, y = scale_prob * probType1, color = "Risk probability"), linetype = "solid", size = 1) +
+        geom_line(data = DP_data, aes(x = time, y = scale_prob * probType1, color = "Risk probability"), linetype = "solid", linewidth = 1) +
         geom_point(data = DP_data, aes(x = time, y = scale_prob * probType1, color = "Risk probability"), size = 3) + 
 
         scale_color_manual(name = "Lines",
                            values = c("Longitudinal" = "green",
                                       "Risk probability" = "black"))   +
-        scale_y_continuous(sec.axis = sec_axis(~./scale_prob, name="Risk Probabilities")) + 
+        risk_axis_scale(scale_prob, history_labels) + 
         ylab("Longitudinal biomarker") + xlab("Follow-up time") +   
-        geom_vline(xintercept = unlist(getFirst(data_predict_all_pre)[survival_variable])[1], 
-                   linetype = "solid", color = "red", size = 2) + 
+        event_time_vline(data_predict_all_pre, survival_fit_all) + 
         theme_bw(base_size = 25)+
         theme(panel.grid.major = element_blank(),
               panel.grid.minor = element_blank(),
@@ -297,4 +362,80 @@ riskPlot = function(data_predict_all_pre, long_fit_all, survival_fit_all,
     
   }
  return(dp_risk)
+}
+
+#' Biomarker axis with the risk probabilities on a secondary axis
+#'
+#' @description Helper for \code{riskPlot()} and \code{predictPlot()}, which
+#' draw risks on the biomarker's axis multiplied by \code{scale_prob}. The
+#' secondary (risk) axis is labelled only within \eqn{[0, 1]}: where the
+#' biomarker goes below 0 it used to show negative "probabilities". For an
+#' ordinal biomarker the primary axis is labelled with its categories.
+#' @param scale_prob Factor the risks were multiplied by.
+#' @param category_labels Category labels of an ordinal biomarker (plotted as
+#'   their codes \code{1:K}), or \code{NULL}.
+#' @return A ggplot2 scale.
+#' @keywords internal
+risk_axis_scale <- function(scale_prob, category_labels = NULL) {
+  prob_axis <- sec_axis(~ . / scale_prob, name = "Risk Probabilities",
+                        breaks = function(limits) {
+                          b <- round(pretty(limits), 10)   # 1 can come out as 1 + 2e-10
+                          b[b >= 0 & b <= 1]
+                        })
+  if (is.null(category_labels)) {
+    scale_y_continuous(sec.axis = prob_axis)
+  } else {
+    scale_y_continuous(breaks = seq_along(category_labels), labels = category_labels,
+                       sec.axis = prob_axis)
+  }
+}
+
+#' Vertical line at the end of a patient's follow-up
+#'
+#' @description Helper for \code{riskPlot()}: a vertical line at the
+#' patient's survival time, labelled in a legend -- solid, coloured by event
+#' type (as the risk curves: black for the first, red for the second), for an
+#' observed event, and dashed grey for a censored follow-up. Nothing is drawn
+#' when the time or the status is unknown, as for a new patient or an
+#' interval-censored fit. The line used to be drawn the same way (red, with no
+#' legend) for a censored patient as for an event.
+#'
+#' @param data_predict_all_pre The patient's prediction data (list of data frames).
+#' @param survival_fit_all The survival sub-model, whose \code{Surv()} outcome
+#'   gives the time and the status.
+#' @param event_type_variable Name of the event-type variable, or \code{NULL}.
+#' @return A list of ggplot2 components (possibly empty).
+#' @keywords internal
+event_time_vline <- function(data_predict_all_pre, survival_fit_all, event_type_variable = NULL) {
+  if (is_interval_censored(survival_fit_all)) return(list())
+  first <- getFirst(data_predict_all_pre)[1, , drop = FALSE]
+  surv_lhs <- survival_fit_all$form_marginal_surv[[2]]
+  y <- tryCatch(eval(surv_lhs, first, environment(survival_fit_all$form_marginal_surv)),
+                error = function(e) NULL)
+  if (is.null(y) || !inherits(y, "Surv")) return(list())
+  event_time <- unname(y[1, "time"])
+  status <- unname(y[1, "status"])
+  if (!is.finite(event_time) || is.na(status)) return(list())
+  if (status == 0) {
+    label <- "Censored"
+    colour <- "grey40"
+  } else if (is.null(event_type_variable)) {
+    label <- "Event"
+    colour <- "red"
+  } else {
+    event_type <- suppressWarnings(as.numeric(unlist(first[event_type_variable])[1]))
+    if (length(event_type) != 1 || !is.finite(event_type)) {
+      label <- "Event"
+      colour <- "grey40"
+    } else {
+      label <- sprintf("Event type%d", event_type + 1)
+      colour <- if (event_type == 0) "black" else "red"
+    }
+  }
+  list(
+    geom_vline(data = data.frame(time = event_time, end = label),
+               aes(xintercept = time, linetype = end), color = colour, linewidth = 1.5),
+    ggplot2::scale_linetype_manual(name = "End of follow-up",
+                                   values = stats::setNames(if (label == "Censored") "dashed" else "solid", label))
+  )
 }

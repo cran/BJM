@@ -44,10 +44,10 @@ survival_trans_function <- list(
   fun4 = function(x) abs(x - 7)
 )
 
-data_raw_predict <- pbc3[pbc3$id == 2, ]
+data_raw_predict <- pbc3[pbc3$id == 2 & pbc3$year <= 5, ]
 data_predict_all <- list(data_raw_predict, data_raw_predict)
 
-risk <- dynamicPrediction(
+risk <- predictRisk(
   data_predict_all, long_fit_all, survival_fit_all,
   prediction_time = 5, horizon = 1, time_variable = "year",
   survival_variable_all, survival_trans_function,
@@ -62,7 +62,7 @@ identical(trans$survival_variable_all, survival_variable_all)
 trans$survival_trans_function[[1]](2)
 
 ## ----dynamic-prediction-bio---------------------------------------------------
-bio_pred <- dynamicPredictionBio(
+bio_pred <- predictLongitudinal(
   bio_i = 1, data_predict_all, long_fit_all, survival_fit_all,
   prediction_time = 5, horizon = 1, time_variable = "year",
   survival_variable_all, survival_trans_function,
@@ -72,14 +72,14 @@ bio_pred <- dynamicPredictionBio(
 bio_pred$Y_predict
 
 ## ----bandcount-convergence----------------------------------------------------
-risk_default <- dynamicPrediction(
+risk_default <- predictRisk(
   data_predict_all, long_fit_all, survival_fit_all,
   prediction_time = 5, horizon = 1, time_variable = "year",
   survival_variable_all, survival_trans_function,
   bandcount1 = 10, bandcount2 = 20
 )
 
-risk_doubled <- dynamicPrediction(
+risk_doubled <- predictRisk(
   data_predict_all, long_fit_all, survival_fit_all,
   prediction_time = 5, horizon = 1, time_variable = "year",
   survival_variable_all, survival_trans_function,
@@ -91,7 +91,7 @@ abs(risk_default$risk_prob_2 - risk_doubled$risk_prob_2)
 
 ## ----validation-example, error = TRUE-----------------------------------------
 try({
-dynamicPrediction(
+predictRisk(
   data_predict_all[[1]], long_fit_all, survival_fit_all,
   prediction_time = 5, horizon = 1, time_variable = "year",
   survival_variable_all, survival_trans_function,

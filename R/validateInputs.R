@@ -125,7 +125,7 @@ assert_string <- function(x, arg_name) {
 #' Assert that a bandcount argument is a positive number or "auto"
 #'
 #' @description Shared input-validation helper for the \code{bandcount1}/
-#' \code{bandcount2}/\code{bandcount3} arguments of \code{dynamicPrediction()},
+#' \code{bandcount2}/\code{bandcount3} arguments of \code{predictRisk()},
 #' \code{dynamicPredictionBio()}, \code{predictPlot()}, and \code{riskPlot()},
 #' which now accept either an explicit positive number (the original
 #' behavior) or the literal string \code{"auto"} to have the value chosen
@@ -172,45 +172,60 @@ assert_index <- function(x, max_value, arg_name, context) {
   invisible(TRUE)
 }
 
-#' Warn about formula terms whose basis is recomputed from whatever data
-#' they are given
+#' Formula terms whose values depend on the other rows of the data
 #'
-#' @description \code{poly()} (in its default orthogonal mode),
-#' \code{splines::ns()}/\code{splines::bs()}, and \code{factor()} compute
-#' their basis/contrasts from whatever data is passed to \code{model.matrix()}.
-#' BJM's prediction functions rebuild the design matrix from a small,
-#' patient-specific slice of data at every point on the internal prediction
-#' grid, which is not the data the model was fit on, so the basis
-#' recomputed at prediction time silently does not match the one used at
-#' fitting time (or, with too few distinct values, \code{model.matrix()}
-#' fails outright). \code{poly(..., raw = TRUE)}, \code{I(x^2)}, \code{log()},
-#' \code{sqrt()}, and similar terms that do not depend on the surrounding
-#' data are unaffected and are not flagged.
+#' @description The calls in \code{expr} to \code{funs} -- by default
+#' \code{poly()} (unless \code{raw = TRUE}), \code{splines::ns()},
+#' \code{splines::bs()} and \code{factor()} -- as deparsed strings. See
+#' \code{warn_unsafe_formula_terms()}.
+#'
+#' @return A character vector, without duplicates.
 #' @keywords internal
-warn_unsafe_formula_terms <- function(formula_list, arg_name) {
-  find_unsafe_calls <- function(expr) {
+unsafe_formula_calls <- function(expr, funs = c("poly", "ns", "bs", "factor")) {
+  find <- function(expr) {
     hits <- character(0)
     if (is.call(expr)) {
       fname <- as.character(expr[[1]])
       fname <- fname[length(fname)]
-      if (fname %in% c("poly", "ns", "bs", "factor")) {
+      if (fname %in% funs) {
         raw_arg <- tryCatch(eval(expr[["raw"]]), error = function(e) FALSE)
         if (!(fname == "poly" && isTRUE(raw_arg))) {
           hits <- c(hits, deparse(expr))
         }
       }
       for (a in as.list(expr)[-1]) {
-        hits <- c(hits, find_unsafe_calls(a))
+        hits <- c(hits, find(a))
       }
     }
     hits
   }
+  unique(find(expr))
+}
 
+#' Warn about formula terms whose basis is recomputed from whatever data
+#' they are given
+#'
+#' @description \code{poly()} (in its default orthogonal mode),
+#' \code{splines::ns()}/\code{splines::bs()}, and \code{factor()} compute
+#' their basis/contrasts from whatever data is passed to \code{model.matrix()}.
+#' For a continuous biomarker's \code{long_sub_fixed} formula this is
+#' handled: the basis \code{lme()} was fit with (its \code{terms}'
+#' \code{predvars}) and the training factor levels are reused both when
+#' estimating \code{Sigma_fit} and at prediction time, so such terms are not
+#' flagged there. They are still rebuilt from the data at hand -- a single
+#' patient's rows at prediction time, the retained subjects when estimating
+#' \code{Sigma_fit} -- for \code{long_sub_random} formulas and for an
+#' ordinal biomarker's \code{long_sub_fixed} formula, which is where this
+#' warns. \code{poly(..., raw = TRUE)}, \code{I(x^2)}, \code{log()},
+#' \code{sqrt()}, and similar terms that do not depend on the surrounding
+#' data are never flagged.
+#' @keywords internal
+warn_unsafe_formula_terms <- function(formula_list, arg_name) {
   for (i in seq_along(formula_list)) {
-    hits <- unique(find_unsafe_calls(formula_list[[i]]))
+    hits <- unsafe_formula_calls(formula_list[[i]])
     if (length(hits) > 0) {
       warning(sprintf(
-        "`%s[[%d]]` uses %s. Its basis/contrasts depend on the data it is computed from, but BJM rebuilds the design matrix from a small, patient-specific slice of data at every point on the prediction grid -- so this can silently produce incorrect predictions, or fail outright when there are too few distinct values, instead of reusing the basis fit at training time. Prefer poly(..., raw = TRUE), I(x^2), log(), sqrt(), or other terms that do not depend on the surrounding data.",
+        "`%s[[%d]]` uses %s. Its basis/contrasts depend on the data it is computed from, and for this formula BJM rebuilds the design matrix from the data at hand (a single patient's rows at prediction time) instead of reusing the training-time basis -- so this can silently produce incorrect predictions, or fail outright when there are too few distinct values. Prefer poly(..., raw = TRUE), I(x^2), log(), sqrt(), or other terms that do not depend on the surrounding data.",
         arg_name, i, paste(hits, collapse = ", ")
       ), call. = FALSE)
     }
@@ -220,7 +235,7 @@ warn_unsafe_formula_terms <- function(formula_list, arg_name) {
 
 #' Assert that survival_variable_all/survival_trans_function are consistent
 #'
-#' @description Shared input-validation helper for \code{dynamicPrediction()},
+#' @description Shared input-validation helper for \code{predictRisk()},
 #' \code{dynamicPredictionBio()}, \code{predictPlot()}, and \code{riskPlot()}:
 #' the two arguments must have matching length, and every transform must be
 #' a function. When \code{probe_value} is supplied, every transform is also
@@ -274,6 +289,28 @@ assert_survival_trans <- function(survival_variable_all, survival_trans_function
   invisible(TRUE)
 }
 
+#' Assert that an optional (Suggests-only) package is installed
+#'
+#' @description Shared input-validation helper for functions that depend on
+#' a package listed in \code{Suggests} rather than \code{Imports} (so that
+#' most users -- and CRAN's own checks -- are unaffected by a large,
+#' optional dependency they never call). Every call site into that package
+#' must still be fully namespaced (\code{pkg::fun()}), never
+#' \code{@importFrom}; this helper just turns a missing package into a
+#' clear, actionable error instead of a cryptic "could not find function"
+#' failure deep inside the calling code.
+#' @keywords internal
+assert_package_installed <- function(pkg, context) {
+  if (!requireNamespace(pkg, quietly = TRUE)) {
+    stop(sprintf(
+      "%s requires the '%s' package, which is not installed. Install it with install.packages(\"%s\")%s.",
+      context, pkg, pkg,
+      if (pkg == "torch") ' and then run torch::install_torch() once to download LibTorch' else ""
+    ), call. = FALSE)
+  }
+  invisible(TRUE)
+}
+
 #' Call a single survival_trans_function element and validate its output
 #'
 #' @description \code{assert_survival_trans()} only probes each transform
@@ -298,4 +335,167 @@ apply_survival_trans <- function(fun, x, surv_i) {
     ), surv_i, format(x), class(value)[1], length(value)), call. = FALSE)
   }
   value
+}
+
+#' Check the event-time transformations against the training data
+#'
+#' @description The longitudinal sub-models were fit on data whose
+#' \code{survival_variable_all} columns the user computed from the event time;
+#' at prediction time the same columns are recomputed with
+#' \code{survival_trans_function}. The two are passed as separate lists, so a
+#' function out of order (or a different one) used to give wrong predictions
+#' silently. This applies each function to the event times stored with every
+#' fit (\code{lme()}'s \code{data}, \code{clmm()}'s model frame) and stops if
+#' the result differs from the column the model was fit on.
+#' @param long_fit_all Output of \code{longitudinalSub()}.
+#' @param survival_fit_all Output of \code{survivalSub()}.
+#' @param survival_variable_all,survival_trans_function As in
+#'   \code{\link{predictRisk}}.
+#' @return \code{TRUE}, invisibly; an error on a mismatch.
+#' @keywords internal
+check_survival_trans_training <- function(long_fit_all, survival_fit_all, survival_variable_all,
+                                          survival_trans_function) {
+  if (length(survival_variable_all) == 0) return(invisible(TRUE))
+  survival_variable <- survival_time_variable(survival_fit_all)
+  for (i in seq_along(long_fit_all$lfit)) {
+    fit <- long_fit_all$lfit[[i]]
+    d <- if (inherits(fit, "lme")) fit$data else fit$model
+    if (!is.data.frame(d) || !survival_variable %in% names(d)) next
+    event_time <- d[[survival_variable]]
+    keep <- !is.na(event_time)
+    if (!any(keep)) next
+    times <- unique(event_time[keep])
+    values_at <- function(k) {
+      v <- vapply(times, function(x) apply_survival_trans(survival_trans_function[[k]], x, k), numeric(1))
+      v[match(event_time[keep], times)]
+    }
+    for (k in seq_along(survival_variable_all)) {
+      column <- survival_variable_all[[k]]
+      if (!column %in% names(d)) next
+      stored <- as.numeric(d[[column]][keep])
+      if (isTRUE(all.equal(stored, values_at(k), tolerance = 1e-6, check.attributes = FALSE))) next
+      other <- Filter(function(j) j != k && isTRUE(all.equal(stored, values_at(j), tolerance = 1e-6,
+                                                             check.attributes = FALSE)),
+                      seq_along(survival_trans_function))
+      stop(sprintf(paste0(
+        "Column `%s`, on which the longitudinal sub-model of biomarker %d was fit, is not ",
+        "survival_trans_function[[%d]] of `%s`%s. survival_variable_all and survival_trans_function ",
+        "must list the transformations used to build the fitting data, in the same order."),
+        column, i, k, survival_variable,
+        if (length(other) > 0) sprintf(" (it matches survival_trans_function[[%d]])", other[[1]]) else ""),
+        call. = FALSE)
+    }
+  }
+  invisible(TRUE)
+}
+
+#' Assert that biomarker_type is a valid per-biomarker type vector
+#'
+#' @description Shared input-validation helper for the \code{biomarker_type}
+#' argument of \code{\link{longitudinalSub}}: when supplied explicitly (as
+#' opposed to being auto-detected from each biomarker's response column),
+#' it must be a character vector with exactly one entry per longitudinal
+#' outcome, and every entry must be one of \code{"continuous"} or
+#' \code{"ordinal"}.
+#' @keywords internal
+assert_biomarker_type <- function(biomarker_type, M, valid_types = c("continuous", "ordinal")) {
+  if (!is.character(biomarker_type) || length(biomarker_type) != M || anyNA(biomarker_type)) {
+    stop(sprintf(
+      "`biomarker_type` must be a character vector of length %d (one entry per longitudinal outcome, in the same order as `long_sub_fixed`), with no missing values.",
+      M
+    ), call. = FALSE)
+  }
+  bad <- setdiff(biomarker_type, valid_types)
+  if (length(bad) > 0) {
+    stop(sprintf(
+      "`biomarker_type` must only contain %s; found invalid value(s): %s.",
+      paste(sprintf('"%s"', valid_types), collapse = ", "),
+      paste(sprintf('"%s"', unique(bad)), collapse = ", ")
+    ), call. = FALSE)
+  }
+  invisible(TRUE)
+}
+
+#' Assert that a list of longitudinalSub.BJM fits is poolable with Rubin's rules
+#'
+#' @description Shared input-validation helper for
+#' \code{\link{poolLongitudinalSub}}: checks that \code{long_fit_all_list}
+#' is a list of at least two \code{longitudinalSub.BJM} objects (the S3
+#' class \code{\link{longitudinalSub}} attaches to its return value), and
+#' that every one of them was fit for the same set of biomarkers with the
+#' same fixed-effect coefficients -- otherwise "the mean of the estimates"
+#' would be averaging unrelated quantities across completions.
+#' @keywords internal
+assert_poolable_longitudinal_fits <- function(long_fit_all_list, arg_name = "long_fit_all_list") {
+  if (!is.list(long_fit_all_list) || is.data.frame(long_fit_all_list)) {
+    stop(sprintf(
+      "`%s` must be a list of `longitudinalSub.BJM` objects (fit `longitudinalSub()` once per completed dataset in `imputeLongitudinal(..., impute = \"multiple\")`'s `data_fit_all_list`), not %s.",
+      arg_name, class(long_fit_all_list)[1]
+    ), call. = FALSE)
+  }
+  if (length(long_fit_all_list) < 2) {
+    stop(sprintf(
+      "`%s` has %d element(s); Rubin's rules pooling needs at least 2 completed-data fits (use `n_imputations >= 2` and `impute = \"multiple\"` in `imputeLongitudinal()`).",
+      arg_name, length(long_fit_all_list)
+    ), call. = FALSE)
+  }
+  for (i in seq_along(long_fit_all_list)) {
+    assert_class(long_fit_all_list[[i]], "longitudinalSub.BJM",
+                 sprintf("%s[[%d]]", arg_name, i), "longitudinalSub")
+  }
+
+  M1 <- length(long_fit_all_list[[1]]$lfit)
+  coef_names_1 <- lapply(long_fit_all_list[[1]]$lfit, function(f) names(marker_estimates(f)$estimate))
+  for (i in seq_along(long_fit_all_list)[-1]) {
+    fit_i <- long_fit_all_list[[i]]
+    if (length(fit_i$lfit) != M1) {
+      stop(sprintf(
+        "`%s[[%d]]` has %d longitudinal outcome(s), but `%s[[1]]` has %d; every fit must be for the same set of biomarkers (fit `longitudinalSub()` with the same `long_sub_fixed`/`long_sub_random` on each completed dataset).",
+        arg_name, i, length(fit_i$lfit), arg_name, M1
+      ), call. = FALSE)
+    }
+    coef_names_i <- lapply(fit_i$lfit, function(f) names(marker_estimates(f)$estimate))
+    if (!identical(coef_names_i, coef_names_1)) {
+      stop(sprintf(
+        "`%s[[%d]]` has different fixed-effect coefficient names than `%s[[1]]`; every fit must use the same `long_sub_fixed` formula(s).",
+        arg_name, i, arg_name
+      ), call. = FALSE)
+    }
+  }
+  invisible(TRUE)
+}
+
+#' Check that the survival time enters the event-type model linearly
+#'
+#' @description Used by \code{survivalSub()}: at prediction time the
+#' event-type model \code{form_conditional_cr} is evaluated at every point of
+#' the survival-time integration grid by multiplying the survival time's
+#' coefficient by the grid value. That is only correct when the survival
+#' time appears as a plain main effect (\code{status ~ time + ...}); a
+#' transformation (\code{log(time)}, \code{I(time^2)}) or an interaction
+#' (\code{time:age}) would silently be evaluated at the wrong value, so it is
+#' rejected here. Leaving the survival time out entirely is allowed (event
+#' type then does not depend on event time).
+#'
+#' @param form_conditional_cr The event-type formula.
+#' @param survival_variable Name of the survival-time variable.
+#' @keywords internal
+assert_linear_time_term <- function(form_conditional_cr, survival_variable) {
+  tt <- stats::terms(form_conditional_cr)
+  factors <- attr(tt, "factors")
+  if (length(factors) == 0) return(invisible(TRUE))
+  uses_time <- vapply(rownames(factors),
+                      function(r) survival_variable %in% all.vars(str2lang(r)), logical(1))
+  uses_time[1] <- FALSE  # the response row
+  if (!any(uses_time)) return(invisible(TRUE))
+  time_terms <- colnames(factors)[colSums(factors[uses_time, , drop = FALSE] > 0) > 0]
+  bad <- setdiff(time_terms, survival_variable)
+  if (length(bad) > 0) {
+    stop(sprintf(paste0(
+      "`form_conditional_cr` uses the survival time `%s` in %s. It may only enter as a ",
+      "plain main effect (e.g. status ~ %s + age), since prediction evaluates it ",
+      "linearly at each point of the integration grid."),
+      survival_variable, paste(sprintf("`%s`", bad), collapse = ", "), survival_variable), call. = FALSE)
+  }
+  invisible(TRUE)
 }
