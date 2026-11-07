@@ -1,7 +1,7 @@
 Package: BJM
 Title: Backward Joint Model for the Dynamic Prediction of Both
         Time-to-Event and Longitudinal Outcomes
-Version: 0.3.0
+Version: 0.3.1
 Authors@R: c(
     person("Wenhao", "Li", email = "wenhaoli.jlu@gmail.com", role = c("aut", "cre")),
     person("Liang", "Li", role = c('aut'),email = "LLi15@mdanderson.org"))
@@ -21,8 +21,8 @@ Suggests: testthat (>= 3.0.0), knitr, rmarkdown, torch, ordinal,
 Config/testthat/edition: 3
 VignetteBuilder: knitr
 NeedsCompilation: no
-Packaged: 2026-10-31 03:46:17 UTC; wenhaoli
+Packaged: 2026-11-07 07:06:48 UTC; wenhaoli
 Author: Wenhao Li [aut, cre],
   Liang Li [aut]
 Repository: CRAN
-Date/Publication: 2026-10-31 08:10:35 UTC
+Date/Publication: 2026-11-07 12:10:27 UTC

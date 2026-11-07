@@ -1,7 +1,7 @@
-39ac131d0d9cb4a8c458fe7d08868498 *DESCRIPTION
+95df8a8e7229a16e0837c6c1abe25131 *DESCRIPTION
 79d341c0bec6fcbe634eeec50565d323 *LICENSE
 a2a899a5a853a4bd2be4d120285986cb *NAMESPACE
-7d2e393bee971f4ca24e8badfd1c03e1 *NEWS.md
+9ae9eaedb23364d29d4e84ed88e9b147 *NEWS.md
 d52e0ab65fecd73810656105070be8f4 *R/buildRecurrentEpisodes.R
 5b81d3f4ed4a1bd9d821b7b60e834d03 *R/calibrationPlot.R
 e920366bdc01e941369f8a853d0b5ecb *R/checkBandcountConvergence.R
@@ -270,7 +270,7 @@ f2b658432eb90b7e0366ccdf6486a0f4 *tests/testthat/test-dynamicPredictionBioAll.R
 c5edcdd1086676b490775fd1bcc0a78a *tests/testthat/test-imputeLongitudinal.R
 a68621b7ca3999f3a9418c5ce6f3b64d *tests/testthat/test-input-validation.R
 38b13f4e68a45d3c31d9241493eab090 *tests/testthat/test-longitudinalSub.R
-01b5a18312a0ced8ba9970e1bd9e7b04 *tests/testthat/test-longitudinalSubCopula.R
+4aaf910c5fee015ab7ff12f9210e0a7f *tests/testthat/test-longitudinalSubCopula.R
 7a85811b231dded68168907e28d00d97 *tests/testthat/test-performanceInterval.R
 0633d73693b50d12b0e7a9e7483cde9b *tests/testthat/test-plots.R
 29816d73c608389f6a467125debeebf9 *tests/testthat/test-poolLongitudinalSub.R
@@ -281,7 +281,7 @@ ab3eab7002c7db1085e4557295bab08f *tests/testthat/test-predictLongitudinal.R
 800c03d50bfa8b442fbaf7c6b5b47d2d *tests/testthat/test-rightcensor-reference.R
 52eb5a842560ce8320f642f12d3acd09 *tests/testthat/test-simulateTrajectory.R
 971e88d95424b693934befaff4165848 *tests/testthat/test-survivalSub.R
-7711838ecf56edffe4d915b1e7721854 *tests/testthat/test-survivalSubInterval.R
+d83b5ee2898c3cfdfebfe660420e6ed4 *tests/testthat/test-survivalSubInterval.R
 e52cf70a485f62be9ecf6b892d5b6612 *tests/testthat/test-usability-helpers.R
 6949d027b596be3b5f1dad1e5e57dafd *tests/testthat/test-woodbury.R
 1989a429a434d63cb11ee958c75accd9 *tests/testthat/testdata/baseline.rds
